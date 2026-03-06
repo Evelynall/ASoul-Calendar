@@ -1,6 +1,10 @@
 ﻿import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
 import './App.css';
 const STORAGE_KEY = 'asoul_calendar_data';
+const USER_DATA_KEY = 'asoul_user_data'; // 用户个性化数据（完成状态、备注等）
+const BASE_SCHEDULES_KEY = 'asoul_base_schedules'; // 基础日程库缓存
+const BASE_SCHEDULES_VERSION_KEY = 'asoul_base_schedules_version'; // 基础日程库版本号
+const BASE_SCHEDULES_LAST_FETCH_KEY = 'asoul_base_schedules_last_fetch'; // 最后获取时间
 const THEME_KEY = 'asoul_calendar_theme';
 const ICS_CONFIG_KEY = 'asoul_ics_urls';
 const DISPLAY_MODE_KEY = 'asoul_display_mode';
@@ -9,6 +13,37 @@ const ANIME_VIEW_KEY = 'asoul_anime_view';
 const GIST_TOKEN_KEY = 'asoul_gist_token';
 const GIST_ID_KEY = 'asoul_gist_id';
 const CUSTOM_COLORS_KEY = 'asoul_custom_colors';
+
+// 基础日程库的 GitHub 地址（你需要替换为实际地址）
+const BASE_SCHEDULES_URL = 'https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json';
+
+// 添加时间戳参数以绕过CDN缓存
+const getBaseSchedulesUrl = () => {
+    return `${BASE_SCHEDULES_URL}?t=${Date.now()}`;
+};
+
+// 检查是否需要重新获取基础日程（2小时限制）
+const shouldFetchBaseSchedules = () => {
+    const lastFetch = localStorage.getItem(BASE_SCHEDULES_LAST_FETCH_KEY);
+    const cachedSchedules = localStorage.getItem(BASE_SCHEDULES_KEY);
+
+    // 如果没有缓存数据，立即获取
+    if (!cachedSchedules) {
+        return true;
+    }
+
+    // 如果没有记录最后获取时间，立即获取
+    if (!lastFetch) {
+        return true;
+    }
+
+    // 检查是否超过2小时（7200000毫秒）
+    const now = Date.now();
+    const lastFetchTime = parseInt(lastFetch, 10);
+    const twoHours = 2 * 60 * 60 * 1000;
+
+    return (now - lastFetchTime) >= twoHours;
+};
 
 const DEFAULT_MEMBER_CONFIG = {
     '贝拉': { color: '#DB7D74', textColor: '#FFFFFF' },
@@ -302,20 +337,8 @@ const SettingsSection = ({ title, icon, iconColor, description, children }) => {
 };
 
 function App() {
-    const [schedules, setSchedules] = useState(() => {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-            const data = JSON.parse(saved);
-            // 兼容旧数据：如果没有isAnime字段，默认为false（日历日程）
-            // 兼容旧数据：如果没有isFavorite字段，默认为false
-            return Array.isArray(data) ? data.map(item => ({
-                ...item,
-                isAnime: item.isAnime || false,
-                isFavorite: item.isFavorite || false
-            })) : [];
-        }
-        return [];
-    });
+    const [schedules, setSchedules] = useState([]);
+    const [isLoadingBase, setIsLoadingBase] = useState(true);
 
     const [currentDate, setCurrentDate] = useState(() => toZeroDate());
     const [view, setView] = useState(() => localStorage.getItem(ANIME_VIEW_KEY) || 'calendar');
@@ -341,7 +364,6 @@ function App() {
         const saved = localStorage.getItem(CUSTOM_COLORS_KEY);
         return saved ? JSON.parse(saved) : {};
     });
-    const [showThankYouModal, setShowThankYouModal] = useState(false);
 
     const [newSchedule, setNewSchedule] = useState({
         date: formatDateString(new Date()),
@@ -357,7 +379,128 @@ function App() {
 
     const fileInputRef = useRef(null);
 
+    // 加载并合并基础日程库和用户数据
     useEffect(() => {
+        const loadSchedules = async () => {
+            setIsLoadingBase(true);
+            try {
+                // 1. 尝试从网络加载基础日程库
+                let baseSchedules = [];
+                let baseVersion = null;
+
+                // 检查是否需要重新获取（2小时限制）
+                if (shouldFetchBaseSchedules()) {
+                    try {
+                        const response = await fetch(getBaseSchedulesUrl());
+                        if (response.ok) {
+                            const data = await response.json();
+                            baseSchedules = data.schedules || [];
+                            baseVersion = data.version || Date.now();
+
+                            // 缓存基础日程库和获取时间
+                            localStorage.setItem(BASE_SCHEDULES_KEY, JSON.stringify(baseSchedules));
+                            localStorage.setItem(BASE_SCHEDULES_VERSION_KEY, baseVersion.toString());
+                            localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
+                        }
+                    } catch (error) {
+                        console.warn('无法加载基础日程库，使用缓存数据:', error);
+                        // 如果网络加载失败，使用缓存
+                        const cached = localStorage.getItem(BASE_SCHEDULES_KEY);
+                        if (cached) {
+                            baseSchedules = JSON.parse(cached);
+                        }
+                    }
+                } else {
+                    // 未超过2小时，直接使用缓存
+                    console.log('使用缓存的基础日程（未超过2小时）');
+                    const cached = localStorage.getItem(BASE_SCHEDULES_KEY);
+                    if (cached) {
+                        baseSchedules = JSON.parse(cached);
+                    }
+                }
+
+                // 2. 加载用户数据（完成状态、备注、用户添加的日程）
+                const userData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
+
+                // 3. 合并数据
+                const mergedSchedules = baseSchedules.map(baseItem => {
+                    const userItem = userData[baseItem.id];
+                    return {
+                        ...baseItem,
+                        completed: userItem?.completed || false,
+                        note: userItem?.note || '',
+                        link: userItem?.link || baseItem.link || '',
+                        isFavorite: userItem?.isFavorite || false,
+                        isAnime: userItem?.isAnime || baseItem.isAnime || false,
+                        isBaseSchedule: true // 标记为基础日程
+                    };
+                });
+
+                // 4. 添加用户自己创建的日程
+                const userSchedules = Object.values(userData)
+                    .filter(item => item.isUserCreated)
+                    .map(item => ({
+                        ...item,
+                        isAnime: item.isAnime || false,
+                        isFavorite: item.isFavorite || false
+                    }));
+
+                setSchedules([...mergedSchedules, ...userSchedules]);
+            } catch (error) {
+                console.error('加载日程数据失败:', error);
+                // 如果完全失败，尝试加载旧的完整数据（兼容旧版本）
+                const oldData = localStorage.getItem(STORAGE_KEY);
+                if (oldData) {
+                    const data = JSON.parse(oldData);
+                    setSchedules(Array.isArray(data) ? data.map(item => ({
+                        ...item,
+                        isAnime: item.isAnime || false,
+                        isFavorite: item.isFavorite || false
+                    })) : []);
+                }
+            } finally {
+                setIsLoadingBase(false);
+            }
+        };
+
+        loadSchedules();
+    }, []);
+
+    useEffect(() => {
+        if (schedules.length === 0) return;
+
+        // 分离用户数据和基础数据
+        const userData = {};
+
+        schedules.forEach(schedule => {
+            if (schedule.isUserCreated) {
+                // 用户创建的日程，保存完整数据
+                userData[schedule.id] = { ...schedule, isUserCreated: true };
+            } else if (schedule.isBaseSchedule) {
+                // 基础日程，只保存用户修改的部分
+                const userModifications = {};
+                if (schedule.completed) userModifications.completed = true;
+                if (schedule.note) userModifications.note = schedule.note;
+                // 保存用户自定义的链接（排除系统自带的链接）
+                if (schedule.link && schedule.link.trim()) {
+                    const isSystemLink = schedule.link === schedule.liveRoomUrl ||
+                        schedule.link === schedule.dynamicUrl ||
+                        schedule.link === schedule.icsUrl;
+                    if (!isSystemLink) {
+                        userModifications.link = schedule.link;
+                    }
+                }
+                if (schedule.isFavorite) userModifications.isFavorite = true;
+                if (schedule.isAnime) userModifications.isAnime = true;
+
+                if (Object.keys(userModifications).length > 0) {
+                    userData[schedule.id] = userModifications;
+                }
+            }
+        });
+
+        localStorage.setItem(USER_DATA_KEY, JSON.stringify(userData));
+        // 保留旧的存储方式作为备份（可选）
         localStorage.setItem(STORAGE_KEY, JSON.stringify(schedules));
     }, [schedules]);
 
@@ -682,7 +825,8 @@ function App() {
             date: formattedDate,
             time: time,
             completed: false,
-            note: ''
+            note: '',
+            isUserCreated: true // 标记为用户创建
         };
         setSchedules(prev => [...prev, entry]);
         setIsAddModalOpen(false);
@@ -881,13 +1025,6 @@ function App() {
             setView('settings');
             return;
         }
-
-        // 显示感谢弹窗
-        setShowThankYouModal(true);
-    };
-
-    const proceedWithSync = async () => {
-        setShowThankYouModal(false);
         setIsSyncing(true);
         const urls = icsUrls.split('\n').filter(u => u.trim().startsWith('http'));
         let totalAdded = 0;
@@ -971,67 +1108,124 @@ function App() {
         reader.onload = (e) => {
             try {
                 const importedData = JSON.parse(e.target.result);
-                if (!Array.isArray(importedData)) throw new Error('格式不正确');
 
-                // 检查重复项并合并备注
-                const existingSchedules = schedules;
-                const newSchedules = [];
-                const updatedSchedules = [...existingSchedules];
+                // 检查是否是用户数据格式（对象）还是旧的完整数据格式（数组）
+                let userData = {};
+
+                if (Array.isArray(importedData)) {
+                    // 旧格式：完整日程数组，需要转换为用户数据格式
+                    alert('检测到旧格式数据，正在转换...');
+                    importedData.forEach(schedule => {
+                        if (schedule.isUserCreated) {
+                            userData[schedule.id] = { ...schedule, isUserCreated: true };
+                        } else {
+                            const userModifications = {};
+                            if (schedule.completed) userModifications.completed = true;
+                            if (schedule.note) userModifications.note = schedule.note;
+                            if (schedule.link && !schedule.liveRoomUrl) userModifications.link = schedule.link;
+                            if (schedule.isFavorite) userModifications.isFavorite = true;
+                            if (schedule.isAnime) userModifications.isAnime = true;
+
+                            if (Object.keys(userModifications).length > 0) {
+                                userData[schedule.id] = userModifications;
+                            }
+                        }
+                    });
+                } else if (typeof importedData === 'object') {
+                    // 新格式：用户数据对象
+                    userData = importedData;
+                } else {
+                    throw new Error('文件格式不正确');
+                }
+
+                // 获取当前用户数据
+                const currentUserData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
+
+                // 合并用户数据
                 let mergedCount = 0;
                 let addedCount = 0;
+                let updatedCount = 0;
 
-                importedData.forEach(importedItem => {
-                    // 查找重复项：相同的日期、时间、标题、副标题和类型
-                    const duplicateIndex = existingSchedules.findIndex(existingItem =>
-                        existingItem.date === importedItem.date &&
-                        existingItem.time === importedItem.time &&
-                        existingItem.title === importedItem.title &&
-                        existingItem.subTitle === importedItem.subTitle &&
-                        existingItem.type === importedItem.type
-                    );
+                Object.keys(userData).forEach(id => {
+                    if (currentUserData[id]) {
+                        // 已存在，合并数据
+                        if (userData[id].isUserCreated) {
+                            // 用户创建的日程，完全替换
+                            currentUserData[id] = userData[id];
+                            updatedCount++;
+                        } else {
+                            // 基础日程的修改，合并字段
+                            const existing = currentUserData[id];
+                            const imported = userData[id];
 
-                    if (duplicateIndex !== -1) {
-                        // 找到重复项，检查备注是否不同
-                        const existingItem = existingSchedules[duplicateIndex];
-                        if (importedItem.note && importedItem.note !== existingItem.note) {
                             // 合并备注
-                            const mergedNote = existingItem.note
-                                ? `${existingItem.note}\n${importedItem.note}`
-                                : importedItem.note;
+                            if (imported.note) {
+                                if (existing.note && existing.note !== imported.note) {
+                                    currentUserData[id].note = `${existing.note}\n---\n${imported.note}`;
+                                    mergedCount++;
+                                } else {
+                                    currentUserData[id].note = imported.note;
+                                }
+                            }
 
-                            updatedSchedules[duplicateIndex] = {
-                                ...existingItem,
-                                note: mergedNote
-                            };
-                            mergedCount++;
+                            // 合并其他字段
+                            if (imported.completed) currentUserData[id].completed = true;
+                            if (imported.link) currentUserData[id].link = imported.link;
+                            if (imported.isFavorite) currentUserData[id].isFavorite = true;
+                            if (imported.isAnime) currentUserData[id].isAnime = true;
+
+                            updatedCount++;
                         }
-                        // 如果备注相同或导入项没有备注，则不处理
                     } else {
-                        // 新项，添加到新日程列表
-                        newSchedules.push(importedItem);
+                        // 新数据
+                        currentUserData[id] = userData[id];
                         addedCount++;
                     }
                 });
 
-                // 更新日程列表
-                if (newSchedules.length > 0 || mergedCount > 0) {
-                    setSchedules([...updatedSchedules, ...newSchedules]);
+                // 保存合并后的用户数据
+                localStorage.setItem(USER_DATA_KEY, JSON.stringify(currentUserData));
 
-                    let message = '';
-                    if (addedCount > 0 && mergedCount > 0) {
-                        message = `成功导入 ${addedCount} 项新日程，合并了 ${mergedCount} 项重复日程的备注。`;
-                    } else if (addedCount > 0) {
-                        message = `成功导入 ${addedCount} 项新日程。`;
-                    } else if (mergedCount > 0) {
-                        message = `合并了 ${mergedCount} 项重复日程的备注，没有新日程导入。`;
-                    } else {
-                        message = '所有日程都已存在且备注相同，没有新数据导入。';
-                    }
-                    alert(message);
-                } else {
-                    alert('所有日程都已存在且备注相同，没有新数据导入。');
-                }
-            } catch (err) { alert('导入失败：' + err.message); }
+                // 重新加载日程
+                const baseSchedules = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
+
+                // 合并基础日程和用户数据
+                const mergedSchedules = baseSchedules.map(baseItem => {
+                    const userItem = currentUserData[baseItem.id];
+                    return {
+                        ...baseItem,
+                        completed: userItem?.completed || false,
+                        note: userItem?.note || '',
+                        link: userItem?.link || baseItem.link || '',
+                        isFavorite: userItem?.isFavorite || false,
+                        isAnime: userItem?.isAnime || baseItem.isAnime || false,
+                        isBaseSchedule: true
+                    };
+                });
+
+                // 添加用户创建的日程
+                const userSchedules = Object.values(currentUserData)
+                    .filter(item => item.isUserCreated)
+                    .map(item => ({
+                        ...item,
+                        isAnime: item.isAnime || false,
+                        isFavorite: item.isFavorite || false
+                    }));
+
+                setSchedules([...mergedSchedules, ...userSchedules]);
+
+                // 显示导入结果
+                let message = '导入完成！\n\n';
+                if (addedCount > 0) message += `新增 ${addedCount} 条数据\n`;
+                if (updatedCount > 0) message += `更新 ${updatedCount} 条数据\n`;
+                if (mergedCount > 0) message += `合并 ${mergedCount} 条备注\n`;
+
+                alert(message);
+
+            } catch (err) {
+                console.error('导入错误:', err);
+                alert('导入失败：' + err.message);
+            }
             event.target.value = '';
         };
         reader.readAsText(file);
@@ -1090,12 +1284,45 @@ function App() {
 
         setIsGistSyncing(true);
         try {
+            // 提取用户数据
+            const userData = {};
+
+            schedules.forEach(schedule => {
+                if (schedule.isUserCreated) {
+                    // 用户创建的日程，保存完整数据
+                    userData[schedule.id] = { ...schedule, isUserCreated: true };
+                } else if (schedule.isBaseSchedule) {
+                    // 基础日程，只保存用户修改的部分
+                    const userModifications = {};
+                    if (schedule.completed) userModifications.completed = true;
+                    if (schedule.note) userModifications.note = schedule.note;
+                    // 保存用户自定义的链接（排除系统自带的链接）
+                    if (schedule.link && schedule.link.trim()) {
+                        const isSystemLink = schedule.link === schedule.liveRoomUrl ||
+                            schedule.link === schedule.dynamicUrl ||
+                            schedule.link === schedule.icsUrl;
+                        if (!isSystemLink) {
+                            userModifications.link = schedule.link;
+                        }
+                    }
+                    if (schedule.isFavorite) userModifications.isFavorite = true;
+                    if (schedule.isAnime) userModifications.isAnime = true;
+
+                    if (Object.keys(userModifications).length > 0) {
+                        userData[schedule.id] = userModifications;
+                    }
+                }
+            });
+
+            const userDataJson = JSON.stringify(userData, null, 2);
+            const fileSizeKB = (new Blob([userDataJson]).size / 1024).toFixed(2);
+
             const data = {
-                description: 'A-SOUL 追番表数据备份',
+                description: 'A-SOUL 追番表用户数据备份',
                 public: false,
                 files: {
-                    'asoul-calendar-data.json': {
-                        content: JSON.stringify(schedules, null, 2)
+                    'asoul-user-data.json': {
+                        content: userDataJson
                     }
                 }
             };
@@ -1133,7 +1360,7 @@ function App() {
                 setGistId(result.id);
             }
 
-            alert('数据已成功同步到 GitHub Gist！');
+            alert(`数据已成功同步到 GitHub Gist！\n\n同步的数据：\n- 用户数据记录：${Object.keys(userData).length} 条\n- 文件大小：${fileSizeKB} KB`);
         } catch (err) {
             console.error('Gist 同步错误:', err);
             alert('同步失败：' + err.message);
@@ -1162,28 +1389,110 @@ function App() {
             }
 
             const gist = await response.json();
-            const file = gist.files['asoul-calendar-data.json'];
+            const file = gist.files['asoul-user-data.json'] || gist.files['asoul-calendar-data.json'];
 
             if (!file) {
                 throw new Error('Gist 中未找到数据文件');
             }
 
+            const fileSizeKB = (file.size / 1024).toFixed(2);
             const gistData = JSON.parse(file.content);
 
-            if (!Array.isArray(gistData)) {
+            // 检查是否是新格式（用户数据对象）还是旧格式（完整数组）
+            let userData = {};
+
+            if (Array.isArray(gistData)) {
+                // 旧格式：完整日程数组，需要转换
+                alert('检测到旧格式数据，正在转换...');
+                gistData.forEach(schedule => {
+                    if (schedule.isUserCreated) {
+                        userData[schedule.id] = { ...schedule, isUserCreated: true };
+                    } else {
+                        const userModifications = {};
+                        if (schedule.completed) userModifications.completed = true;
+                        if (schedule.note) userModifications.note = schedule.note;
+                        if (schedule.link && !schedule.liveRoomUrl) userModifications.link = schedule.link;
+                        if (schedule.isFavorite) userModifications.isFavorite = true;
+                        if (schedule.isAnime) userModifications.isAnime = true;
+
+                        if (Object.keys(userModifications).length > 0) {
+                            userData[schedule.id] = userModifications;
+                        }
+                    }
+                });
+            } else if (typeof gistData === 'object') {
+                // 新格式：用户数据对象
+                userData = gistData;
+            } else {
                 throw new Error('数据格式不正确');
             }
 
-            // 合并数据
-            const existingIds = new Set(schedules.map(s => s.id));
-            const newSchedules = gistData.filter(item => !existingIds.has(item.id));
+            // 获取当前用户数据
+            const currentUserData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
 
-            if (newSchedules.length > 0) {
-                setSchedules(prev => [...prev, ...newSchedules]);
-                alert(`成功从 Gist 加载 ${newSchedules.length} 项新日程！`);
-            } else {
-                alert('所有日程都已存在，没有新数据');
-            }
+            // 合并用户数据
+            let addedCount = 0;
+            let updatedCount = 0;
+
+            Object.keys(userData).forEach(id => {
+                if (currentUserData[id]) {
+                    // 已存在，合并数据
+                    if (userData[id].isUserCreated) {
+                        currentUserData[id] = userData[id];
+                    } else {
+                        const existing = currentUserData[id];
+                        const imported = userData[id];
+
+                        if (imported.note) {
+                            if (existing.note && existing.note !== imported.note) {
+                                currentUserData[id].note = `${existing.note}\n---\n${imported.note}`;
+                            } else {
+                                currentUserData[id].note = imported.note;
+                            }
+                        }
+
+                        if (imported.completed) currentUserData[id].completed = true;
+                        if (imported.link) currentUserData[id].link = imported.link;
+                        if (imported.isFavorite) currentUserData[id].isFavorite = true;
+                        if (imported.isAnime) currentUserData[id].isAnime = true;
+                    }
+                    updatedCount++;
+                } else {
+                    currentUserData[id] = userData[id];
+                    addedCount++;
+                }
+            });
+
+            // 保存合并后的用户数据
+            localStorage.setItem(USER_DATA_KEY, JSON.stringify(currentUserData));
+
+            // 重新加载日程
+            const baseSchedules = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
+
+            const mergedSchedules = baseSchedules.map(baseItem => {
+                const userItem = currentUserData[baseItem.id];
+                return {
+                    ...baseItem,
+                    completed: userItem?.completed || false,
+                    note: userItem?.note || '',
+                    link: userItem?.link || baseItem.link || '',
+                    isFavorite: userItem?.isFavorite || false,
+                    isAnime: userItem?.isAnime || baseItem.isAnime || false,
+                    isBaseSchedule: true
+                };
+            });
+
+            const userSchedules = Object.values(currentUserData)
+                .filter(item => item.isUserCreated)
+                .map(item => ({
+                    ...item,
+                    isAnime: item.isAnime || false,
+                    isFavorite: item.isFavorite || false
+                }));
+
+            setSchedules([...mergedSchedules, ...userSchedules]);
+
+            alert(`成功从 Gist 加载数据！\n\n- 新增：${addedCount} 条\n- 更新：${updatedCount} 条\n- 文件大小：${fileSizeKB} KB`);
         } catch (err) {
             console.error('Gist 读取错误:', err);
             alert('读取失败：' + err.message);
@@ -1198,7 +1507,7 @@ function App() {
             return;
         }
 
-        if (!confirm('此操作将用 Gist 中的数据完全替换本地数据，确定继续吗？')) {
+        if (!confirm('此操作将用 Gist 中的用户数据完全替换本地用户数据，确定继续吗？\n\n注意：基础日程库不会被影响。')) {
             return;
         }
 
@@ -1216,20 +1525,73 @@ function App() {
             }
 
             const gist = await response.json();
-            const file = gist.files['asoul-calendar-data.json'];
+            const file = gist.files['asoul-user-data.json'] || gist.files['asoul-calendar-data.json'];
 
             if (!file) {
                 throw new Error('Gist 中未找到数据文件');
             }
 
+            const fileSizeKB = (file.size / 1024).toFixed(2);
             const gistData = JSON.parse(file.content);
 
-            if (!Array.isArray(gistData)) {
+            // 检查格式并转换
+            let userData = {};
+
+            if (Array.isArray(gistData)) {
+                // 旧格式转换
+                alert('检测到旧格式数据，正在转换...');
+                gistData.forEach(schedule => {
+                    if (schedule.isUserCreated) {
+                        userData[schedule.id] = { ...schedule, isUserCreated: true };
+                    } else {
+                        const userModifications = {};
+                        if (schedule.completed) userModifications.completed = true;
+                        if (schedule.note) userModifications.note = schedule.note;
+                        if (schedule.link && !schedule.liveRoomUrl) userModifications.link = schedule.link;
+                        if (schedule.isFavorite) userModifications.isFavorite = true;
+                        if (schedule.isAnime) userModifications.isAnime = true;
+
+                        if (Object.keys(userModifications).length > 0) {
+                            userData[schedule.id] = userModifications;
+                        }
+                    }
+                });
+            } else if (typeof gistData === 'object') {
+                userData = gistData;
+            } else {
                 throw new Error('数据格式不正确');
             }
 
-            setSchedules(gistData);
-            alert(`成功从 Gist 恢复 ${gistData.length} 项日程！`);
+            // 完全替换用户数据
+            localStorage.setItem(USER_DATA_KEY, JSON.stringify(userData));
+
+            // 重新加载日程
+            const baseSchedules = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
+
+            const mergedSchedules = baseSchedules.map(baseItem => {
+                const userItem = userData[baseItem.id];
+                return {
+                    ...baseItem,
+                    completed: userItem?.completed || false,
+                    note: userItem?.note || '',
+                    link: userItem?.link || baseItem.link || '',
+                    isFavorite: userItem?.isFavorite || false,
+                    isAnime: userItem?.isAnime || baseItem.isAnime || false,
+                    isBaseSchedule: true
+                };
+            });
+
+            const userSchedules = Object.values(userData)
+                .filter(item => item.isUserCreated)
+                .map(item => ({
+                    ...item,
+                    isAnime: item.isAnime || false,
+                    isFavorite: item.isFavorite || false
+                }));
+
+            setSchedules([...mergedSchedules, ...userSchedules]);
+
+            alert(`成功从 Gist 恢复用户数据！\n\n- 用户数据记录：${Object.keys(userData).length} 条\n- 文件大小：${fileSizeKB} KB`);
         } catch (err) {
             console.error('Gist 读取错误:', err);
             alert('读取失败：' + err.message);
@@ -1574,43 +1936,203 @@ function App() {
                         </SettingsSection>
 
                         <SettingsSection
+                            title="基础日程库"
+                            icon="refresh"
+                            iconColor="text-blue-500"
+                            description="从 GitHub 同步基础日程库（约2k条日程）"
+                        >
+                            <div className="space-y-4">
+                                <div className="p-4 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                                    <div className="text-sm space-y-2">
+                                        <div className="flex justify-between">
+                                            <span className="text-slate-600 dark:text-slate-400">基础日程数量：</span>
+                                            <span className="font-bold">{schedules.filter(s => s.isBaseSchedule).length} 条</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-slate-600 dark:text-slate-400">用户日程数量：</span>
+                                            <span className="font-bold">{schedules.filter(s => s.isUserCreated).length} 条</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-slate-600 dark:text-slate-400">缓存版本：</span>
+                                            <span className="font-mono text-xs">{localStorage.getItem(BASE_SCHEDULES_VERSION_KEY) || '未缓存'}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-slate-600 dark:text-slate-400">最后获取：</span>
+                                            <span className="font-mono text-xs">
+                                                {(() => {
+                                                    const lastFetch = localStorage.getItem(BASE_SCHEDULES_LAST_FETCH_KEY);
+                                                    if (!lastFetch) return '未记录';
+                                                    const date = new Date(parseInt(lastFetch, 10));
+                                                    return date.toLocaleString('zh-CN', {
+                                                        month: '2-digit',
+                                                        day: '2-digit',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
+                                                    });
+                                                })()}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={async () => {
+                                        setIsLoadingBase(true);
+                                        try {
+                                            const response = await fetch(getBaseSchedulesUrl());
+                                            if (!response.ok) throw new Error('无法加载基础日程库');
+
+                                            const data = await response.json();
+                                            const baseSchedules = data.schedules || [];
+                                            const baseVersion = data.version || Date.now();
+
+                                            localStorage.setItem(BASE_SCHEDULES_KEY, JSON.stringify(baseSchedules));
+                                            localStorage.setItem(BASE_SCHEDULES_VERSION_KEY, baseVersion.toString());
+                                            // 手动获取时更新最后获取时间
+                                            localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
+
+                                            const userData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
+
+                                            const mergedSchedules = baseSchedules.map(baseItem => {
+                                                const userItem = userData[baseItem.id];
+                                                return {
+                                                    ...baseItem,
+                                                    completed: userItem?.completed || false,
+                                                    note: userItem?.note || '',
+                                                    link: userItem?.link || baseItem.link || '',
+                                                    isFavorite: userItem?.isFavorite || false,
+                                                    isAnime: userItem?.isAnime || baseItem.isAnime || false,
+                                                    isBaseSchedule: true
+                                                };
+                                            });
+
+                                            const userSchedules = Object.values(userData)
+                                                .filter(item => item.isUserCreated)
+                                                .map(item => ({
+                                                    ...item,
+                                                    isAnime: item.isAnime || false,
+                                                    isFavorite: item.isFavorite || false
+                                                }));
+
+                                            setSchedules([...mergedSchedules, ...userSchedules]);
+                                            alert(`成功更新基础日程库！共 ${baseSchedules.length} 条日程`);
+                                        } catch (error) {
+                                            console.error('更新失败:', error);
+                                            alert('更新基础日程库失败：' + error.message);
+                                        } finally {
+                                            setIsLoadingBase(false);
+                                        }
+                                    }}
+                                    disabled={isLoadingBase}
+                                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
+                                >
+                                    {isLoadingBase ? <Icon name="refresh" className="w-4 h-4 animate-spin" /> : <Icon name="refresh" className="w-4 h-4" />}
+                                    {isLoadingBase ? '更新中...' : '手动更新基础日程库'}
+                                </button>
+
+                                <div className="text-xs text-slate-500 space-y-1">
+                                    <p>• 基础日程库会在每次打开页面时自动更新</p>
+                                    <p>• 你的备注、完成状态和自己添加的日程不会丢失</p>
+                                    <p>• 如果网络失败，会使用缓存的日程数据</p>
+                                </div>
+                            </div>
+                        </SettingsSection>
+
+                        <SettingsSection
                             title="数据管理"
                             icon="download"
                             iconColor="text-blue-500"
                             description="导入导出数据，管理本地存储"
                         >
                             <div className="space-y-4">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <button onClick={() => {
-                                        const blob = new Blob([JSON.stringify(schedules, null, 2)], { type: 'application/json' });
-                                        const a = document.createElement('a');
-                                        a.href = URL.createObjectURL(blob);
-                                        a.download = `asoul_backup_all.json`;
-                                        a.click();
-                                    }} className="flex items-center justify-center gap-2 p-3 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold italic"><Icon name="download" /> 导出全部</button>
-                                    <button onClick={() => {
-                                        const calendarSchedules = schedules.filter(s => !s.isAnime);
-                                        const blob = new Blob([JSON.stringify(calendarSchedules, null, 2)], { type: 'application/json' });
-                                        const a = document.createElement('a');
-                                        a.href = URL.createObjectURL(blob);
-                                        a.download = `asoul_backup_calendar.json`;
-                                        a.click();
-                                    }} className="flex items-center justify-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 rounded-xl font-bold italic"><Icon name="calendar" /> 只导出日历</button>
-                                    <button onClick={() => {
-                                        const animeSchedules = schedules.filter(s => s.isAnime);
-                                        const blob = new Blob([JSON.stringify(animeSchedules, null, 2)], { type: 'application/json' });
-                                        const a = document.createElement('a');
-                                        a.href = URL.createObjectURL(blob);
-                                        a.download = `asoul_backup_anime.json`;
-                                        a.click();
-                                    }} className="flex items-center justify-center gap-2 p-3 bg-orange-50 dark:bg-orange-900/10 text-orange-600 dark:text-orange-400 rounded-xl font-bold italic"><Icon name="calendar-days" /> 只导出追番表</button>
+                                <div className="text-xs text-slate-500 mb-3 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg">
+                                    <strong>说明：</strong>导出的是用户个性化数据（完成状态、备注、用户创建的日程等），不包含基础日程库。
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <button onClick={() => fileInputRef.current.click()} className="flex items-center justify-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 rounded-xl font-bold italic">
-                                        <Icon name="upload" /> 导入 JSON
+                                    <button onClick={() => {
+                                        // 提取用户数据
+                                        const userData = {};
+
+                                        schedules.forEach(schedule => {
+                                            if (schedule.isUserCreated) {
+                                                // 用户创建的日程，保存完整数据
+                                                userData[schedule.id] = { ...schedule, isUserCreated: true };
+                                            } else if (schedule.isBaseSchedule) {
+                                                // 基础日程，只保存用户修改的部分
+                                                const userModifications = {};
+                                                if (schedule.completed) userModifications.completed = true;
+                                                if (schedule.note) userModifications.note = schedule.note;
+                                                // 保存用户自定义的链接（排除系统自带的链接）
+                                                if (schedule.link && schedule.link.trim()) {
+                                                    const isSystemLink = schedule.link === schedule.liveRoomUrl ||
+                                                        schedule.link === schedule.dynamicUrl ||
+                                                        schedule.link === schedule.icsUrl;
+                                                    if (!isSystemLink) {
+                                                        userModifications.link = schedule.link;
+                                                    }
+                                                }
+                                                if (schedule.isFavorite) userModifications.isFavorite = true;
+                                                if (schedule.isAnime) userModifications.isAnime = true;
+
+                                                if (Object.keys(userModifications).length > 0) {
+                                                    userData[schedule.id] = userModifications;
+                                                }
+                                            }
+                                        });
+
+                                        const blob = new Blob([JSON.stringify(userData, null, 2)], { type: 'application/json' });
+                                        const a = document.createElement('a');
+                                        a.href = URL.createObjectURL(blob);
+                                        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
+                                        a.download = `user-data-${timestamp}.json`;
+                                        a.click();
+                                    }} className="flex items-center justify-center gap-2 p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md transition-all">
+                                        <Icon name="download" /> 导出用户数据
+                                    </button>
+                                    <button onClick={() => fileInputRef.current.click()} className="flex items-center justify-center gap-2 p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-md transition-all">
+                                        <Icon name="upload" /> 导入用户数据
                                         <input type="file" ref={fileInputRef} onChange={handleImportJSON} accept=".json" className="hidden" />
                                     </button>
-                                    <button onClick={() => { if (confirm('确定清空所有数据？这将同时删除已导入的订阅日程。')) { setSchedules([]); localStorage.removeItem(STORAGE_KEY); } }} className="flex items-center justify-center gap-2 p-3 text-red-500 bg-red-50 dark:bg-red-900/10 rounded-xl font-bold italic"><Icon name="trash-2" /> 清空所有数据</button>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <button onClick={() => {
+                                        if (confirm('确定清空所有用户数据？\n\n这将清除：\n- 所有完成状态\n- 所有备注\n- 所有用户创建的日程\n- 所有收藏\n\n基础日程库不会被删除。')) {
+                                            // 只清空用户数据
+                                            localStorage.removeItem(USER_DATA_KEY);
+                                            // 重新加载基础日程库
+                                            const baseSchedules = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
+                                            setSchedules(baseSchedules.map(item => ({
+                                                ...item,
+                                                completed: false,
+                                                note: '',
+                                                link: item.link || '',
+                                                isFavorite: false,
+                                                isAnime: item.isAnime || false,
+                                                isBaseSchedule: true
+                                            })));
+                                            alert('用户数据已清空');
+                                        }
+                                    }} className="flex items-center justify-center gap-2 p-3 text-red-600 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-xl font-bold transition-all">
+                                        <Icon name="trash-2" /> 清空用户数据
+                                    </button>
+                                    <button onClick={() => {
+                                        if (confirm('⚠️ 危险操作：清除所有数据\n\n这将清除：\n- 所有用户数据（完成状态、备注、用户日程等）\n- 基础日程库缓存\n- 所有本地存储数据\n\n确定要继续吗？')) {
+                                            // 清除所有相关的 localStorage 数据
+                                            localStorage.removeItem(USER_DATA_KEY);
+                                            localStorage.removeItem(BASE_SCHEDULES_KEY);
+                                            localStorage.removeItem(BASE_SCHEDULES_VERSION_KEY);
+                                            localStorage.removeItem(BASE_SCHEDULES_LAST_FETCH_KEY);
+                                            localStorage.removeItem(STORAGE_KEY);
+                                            localStorage.removeItem(ICS_CONFIG_KEY);
+
+                                            // 清空日程列表
+                                            setSchedules([]);
+
+                                            alert('所有数据已清除！');
+                                        }
+                                    }} className="flex items-center justify-center gap-2 p-3 text-white bg-red-600 hover:bg-red-700 rounded-xl font-bold shadow-md transition-all">
+                                        <Icon name="trash-2" /> 🔥 清除所有数据（测试用）
+                                    </button>
                                 </div>
                             </div>
                         </SettingsSection>
@@ -1619,8 +2141,11 @@ function App() {
                             title="GitHub Gist 云同步"
                             icon="refresh"
                             iconColor="text-purple-500"
-                            description="使用 GitHub Gist 在多设备间同步数据"
+                            description="使用 GitHub Gist 在多设备间同步用户数据"
                         >
+                            <div className="text-xs text-slate-500 mb-3 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg">
+                                <strong>说明：</strong>只同步用户个性化数据（完成状态、备注、用户创建的日程等），不包含基础日程库。
+                            </div>
                             <p className="text-xs text-slate-500 mb-4 italic">
                                 需要 GitHub Personal Access Token（需要 gist 权限）。
                                 <a
@@ -1665,7 +2190,7 @@ function App() {
                                         className="py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
                                     >
                                         {isGistSyncing ? <Icon name="refresh" className="w-4 h-4 animate-spin" /> : <Icon name="upload" className="w-4 h-4" />}
-                                        {isGistSyncing ? '同步中...' : '上传到 Gist'}
+                                        {isGistSyncing ? '同步中...' : '上传用户数据'}
                                     </button>
 
                                     <button
@@ -1674,7 +2199,7 @@ function App() {
                                         className="py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
                                     >
                                         {isGistSyncing ? <Icon name="refresh" className="w-4 h-4 animate-spin" /> : <Icon name="download" className="w-4 h-4" />}
-                                        合并 Gist 数据
+                                        合并用户数据
                                     </button>
 
                                     <button
@@ -1683,14 +2208,15 @@ function App() {
                                         className="py-3 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-400 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
                                     >
                                         {isGistSyncing ? <Icon name="refresh" className="w-4 h-4 animate-spin" /> : <Icon name="refresh" className="w-4 h-4" />}
-                                        替换为 Gist
+                                        替换用户数据
                                     </button>
                                 </div>
 
                                 <div className="text-xs text-slate-500 space-y-1 pt-2">
-                                    <p>• 上传到 Gist：将当前数据上传到 GitHub Gist（首次会创建新 Gist）</p>
-                                    <p>• 合并 Gist 数据：从 Gist 下载数据并与本地数据合并（不会删除本地数据）</p>
-                                    <p>• 替换为 Gist：用 Gist 中的数据完全替换本地数据</p>
+                                    <p>• 上传用户数据：将用户数据上传到 GitHub Gist（首次会创建新 Gist）</p>
+                                    <p>• 合并用户数据：从 Gist 下载数据并与本地数据智能合并</p>
+                                    <p>• 替换用户数据：用 Gist 中的数据完全替换本地用户数据</p>
+                                    <p>• 兼容旧格式：自动识别并转换旧版本的完整数据格式</p>
                                 </div>
                             </div>
                         </SettingsSection>
@@ -1870,48 +2396,6 @@ function App() {
                         <div className="flex gap-3 pt-4">
                             <button onClick={() => setIsAddModalOpen(false)} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-sm font-bold">取消</button>
                             <button onClick={handleManualAdd} className="flex-1 py-3 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-lg">确认添加</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* 感谢弹窗 */}
-            {showThankYouModal && (
-                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md border dark:border-slate-800 p-8 space-y-6">
-                        <div className="text-center space-y-4">
-                            <div className="flex justify-center">
-                                <div className="w-16 h-16 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center">
-                                    <Icon name="star" className="w-8 h-8 text-white" />
-                                </div>
-                            </div>
-                            <div>
-                                <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-                                    订阅信息来源
-                                </h3>
-                                <p className="text-slate-600 dark:text-slate-400 text-sm">
-                                    订阅信息来自 <span className="font-bold text-pink-600 dark:text-pink-400">枝江站(asoul.love)</span>
-                                </p>
-                            </div>
-                            <div className="bg-gradient-to-r from-pink-50 to-purple-50 dark:from-pink-950/30 dark:to-purple-950/30 rounded-xl p-4 border border-pink-200 dark:border-pink-800">
-                                <p className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-purple-600">
-                                    感谢枝江站的分享与支持！
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex gap-3 pt-2">
-                            <button
-                                onClick={() => setShowThankYouModal(false)}
-                                className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                            >
-                                取消
-                            </button>
-                            <button
-                                onClick={proceedWithSync}
-                                className="flex-1 py-3 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-xl text-sm font-bold shadow-lg hover:shadow-xl transition-all"
-                            >
-                                继续同步
-                            </button>
                         </div>
                     </div>
                 </div>

@@ -1,0 +1,39 @@
+{
+    "version": "20240307001",
+    "schedules": [
+        {
+            "id": "schedule-2024-03-07-20-00-001",
+            "date": "2024/03/07",
+            "time": "20:00",
+            "type": "直播",
+            "subTitle": "嘉然今天吃什么",
+            "title": "《嘉然的奇妙冒险》第10期",
+            "category": "嘉然",
+            "dynamicUrl": "https://www.bilibili.com/opus/123456789",
+            "liveRoomUrl": "https://live.bilibili.com/22637261",
+            "isAnime": false
+        },
+        {
+            "id": "schedule-2024-03-08-19-00-002",
+            "date": "2024/03/08",
+            "time": "19:00",
+            "type": "直播",
+            "subTitle": "贝拉kira",
+            "title": "游戏直播",
+            "category": "贝拉",
+            "liveRoomUrl": "https://live.bilibili.com/22632424",
+            "isAnime": false
+        },
+        {
+            "id": "schedule-2024-03-09-20-30-003",
+            "date": "2024/03/09",
+            "time": "20:30",
+            "type": "直播",
+            "subTitle": "A-SOUL",
+            "title": "团播活动",
+            "category": "A-SOUL",
+            "liveRoomUrl": "https://live.bilibili.com/22632424",
+            "isAnime": false
+        }
+    ]
+}
