@@ -8,8 +8,9 @@ const SPECIAL_GROUP_COLOR_KEY = 'asoul_special_group_color';
 const ANIME_VIEW_KEY = 'asoul_anime_view';
 const GIST_TOKEN_KEY = 'asoul_gist_token';
 const GIST_ID_KEY = 'asoul_gist_id';
+const CUSTOM_COLORS_KEY = 'asoul_custom_colors';
 
-const MEMBER_CONFIG = {
+const DEFAULT_MEMBER_CONFIG = {
     '贝拉': { color: '#DB7D74', textColor: '#FFFFFF' },
     '嘉然': { color: '#E799B0', textColor: '#FFFFFF' },
     '乃琳': { color: '#576690', textColor: '#FFFFFF' },
@@ -20,9 +21,26 @@ const MEMBER_CONFIG = {
     '其他': { color: '#94a3b8', textColor: '#FFFFFF' }
 };
 
+// 获取成员配置（支持自定义颜色）
+const getMemberConfigColors = () => {
+    const saved = localStorage.getItem(CUSTOM_COLORS_KEY);
+    if (saved) {
+        try {
+            const customColors = JSON.parse(saved);
+            return { ...DEFAULT_MEMBER_CONFIG, ...customColors };
+        } catch (e) {
+            return DEFAULT_MEMBER_CONFIG;
+        }
+    }
+    return DEFAULT_MEMBER_CONFIG;
+};
+
+const MEMBER_CONFIG = getMemberConfigColors();
+
 // 获取成员配置（支持多成员组合、直播间地址反向匹配和特殊组合颜色开关）
 const getMemberConfig = (category, displayMode = 'single', liveRoomUrl = null) => {
     const useSpecialGroupColor = localStorage.getItem(SPECIAL_GROUP_COLOR_KEY) !== 'false';
+    const memberConfig = getMemberConfigColors(); // 获取最新的配置（包括自定义颜色）
 
     // 优先根据直播间URL确定主要成员
     let primaryMember = null;
@@ -31,16 +49,16 @@ const getMemberConfig = (category, displayMode = 'single', liveRoomUrl = null) =
     }
 
     // 如果是已知的组合，根据特殊组合颜色开关决定处理方式
-    if (MEMBER_CONFIG[category]) {
+    if (memberConfig[category]) {
         // 如果开启特殊组合颜色，直接返回配置
         if (useSpecialGroupColor) {
-            const config = { ...MEMBER_CONFIG[category] };
+            const config = { ...memberConfig[category] };
             // 如果存在直播间URL对应的成员，且是多成员组合，优先使用直播间成员的颜色
             if (primaryMember && category.includes('+') && displayMode === 'multi-color') {
-                config.color = MEMBER_CONFIG[primaryMember]?.color || config.color;
+                config.color = memberConfig[primaryMember]?.color || config.color;
                 if (config.multiColors && config.multiColors.length > 1) {
                     // 确保直播间成员的颜色在渐变色中排在第一位
-                    const primaryColor = MEMBER_CONFIG[primaryMember]?.color;
+                    const primaryColor = memberConfig[primaryMember]?.color;
                     if (primaryColor && config.multiColors.includes(primaryColor)) {
                         const filteredColors = config.multiColors.filter(c => c !== primaryColor);
                         config.multiColors = [primaryColor, ...filteredColors];
@@ -62,10 +80,10 @@ const getMemberConfig = (category, displayMode = 'single', liveRoomUrl = null) =
     // 处理多成员组合（如"贝拉等"）
     if (category.endsWith('等')) {
         const mainMember = category.replace('等', '');
-        if (MEMBER_CONFIG[mainMember]) {
+        if (memberConfig[mainMember]) {
             // 使用主要成员的颜色，但文本表示为组合
             return {
-                ...MEMBER_CONFIG[mainMember],
+                ...memberConfig[mainMember],
                 isMultiMember: true
             };
         }
@@ -82,11 +100,11 @@ const getMemberConfig = (category, displayMode = 'single', liveRoomUrl = null) =
         }
 
         const memberColors = members.map(member => {
-            if (MEMBER_CONFIG[member]) {
-                return MEMBER_CONFIG[member].color;
+            if (memberConfig[member]) {
+                return memberConfig[member].color;
             }
-            return MEMBER_CONFIG['其他'].color;
-        }).filter(color => color !== MEMBER_CONFIG['其他'].color);
+            return memberConfig['其他'].color;
+        }).filter(color => color !== memberConfig['其他'].color);
 
         if (memberColors.length > 0) {
             if (displayMode === 'multi-color') {
@@ -99,10 +117,10 @@ const getMemberConfig = (category, displayMode = 'single', liveRoomUrl = null) =
                 };
             } else {
                 // 单一颜色模式：优先使用直播间成员的颜色，否则使用第一个成员的颜色
-                const targetMember = primaryMember || members.find(member => MEMBER_CONFIG[member]);
+                const targetMember = primaryMember || members.find(member => memberConfig[member]);
                 if (targetMember) {
                     return {
-                        ...MEMBER_CONFIG[targetMember],
+                        ...memberConfig[targetMember],
                         isMultiMember: true
                     };
                 }
@@ -111,12 +129,12 @@ const getMemberConfig = (category, displayMode = 'single', liveRoomUrl = null) =
     }
 
     // 如果有直播间URL对应的成员，使用该成员的颜色
-    if (primaryMember && MEMBER_CONFIG[primaryMember]) {
-        return MEMBER_CONFIG[primaryMember];
+    if (primaryMember && memberConfig[primaryMember]) {
+        return memberConfig[primaryMember];
     }
 
     // 默认返回其他配置
-    return MEMBER_CONFIG['其他'];
+    return memberConfig['其他'];
 };
 
 const LIVE_ROOM_URLS = {
@@ -251,6 +269,38 @@ const Icon = ({ name, className = "w-4 h-4" }) => {
     );
 };
 
+const SettingsSection = ({ title, icon, iconColor, description, children }) => {
+    const [isOpen, setIsOpen] = useState(false);
+
+    return (
+        <section className="rounded-2xl bg-white dark:bg-slate-900 border dark:border-slate-800 shadow-sm overflow-hidden">
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full p-6 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+            >
+                <div className="flex items-center gap-3">
+                    <Icon name={icon} className={`w-5 h-5 ${iconColor}`} />
+                    <div className="text-left">
+                        <h3 className="font-bold text-lg">{title}</h3>
+                        {description && (
+                            <p className="text-xs text-slate-500 mt-0.5">{description}</p>
+                        )}
+                    </div>
+                </div>
+                <Icon
+                    name="chevron-right"
+                    className={`w-5 h-5 text-slate-400 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                />
+            </button>
+            {isOpen && (
+                <div className="px-6 pb-6">
+                    {children}
+                </div>
+            )}
+        </section>
+    );
+};
+
 function App() {
     const [schedules, setSchedules] = useState(() => {
         const saved = localStorage.getItem(STORAGE_KEY);
@@ -281,12 +331,17 @@ function App() {
         const saved = localStorage.getItem(ICS_CONFIG_KEY);
         return saved ? JSON.parse(saved) : '';
     });
-    const [displayMode, setDisplayMode] = useState(() => localStorage.getItem(DISPLAY_MODE_KEY) || 'single');
+    const [displayMode, setDisplayMode] = useState(() => localStorage.getItem(DISPLAY_MODE_KEY) || 'multi-color');
     const [useSpecialGroupColor, setUseSpecialGroupColor] = useState(() => localStorage.getItem(SPECIAL_GROUP_COLOR_KEY) !==
         'false');
     const [gistToken, setGistToken] = useState(() => localStorage.getItem(GIST_TOKEN_KEY) || '');
     const [gistId, setGistId] = useState(() => localStorage.getItem(GIST_ID_KEY) || '');
     const [isGistSyncing, setIsGistSyncing] = useState(false);
+    const [customColors, setCustomColors] = useState(() => {
+        const saved = localStorage.getItem(CUSTOM_COLORS_KEY);
+        return saved ? JSON.parse(saved) : {};
+    });
+    const [showThankYouModal, setShowThankYouModal] = useState(false);
 
     const [newSchedule, setNewSchedule] = useState({
         date: formatDateString(new Date()),
@@ -319,6 +374,12 @@ function App() {
         if (gistId) localStorage.setItem(GIST_ID_KEY, gistId);
         else localStorage.removeItem(GIST_ID_KEY);
     }, [gistId]);
+
+    useEffect(() => {
+        localStorage.setItem(CUSTOM_COLORS_KEY, JSON.stringify(customColors));
+        // 强制重新渲染以应用新颜色
+        setSchedules(prev => [...prev]);
+    }, [customColors]);
 
     useEffect(() => {
         const root = document.documentElement;
@@ -400,7 +461,7 @@ function App() {
     };
 
     const ScheduleCard = ({ item, showDate = false, showMoveButton = false }) => {
-        const displayMode = localStorage.getItem(DISPLAY_MODE_KEY) || 'single';
+        const displayMode = localStorage.getItem(DISPLAY_MODE_KEY) || 'multi-color';
         // 获取直播间URL（优先级：ICS直播间URL > 预定义直播间URL）
         const liveRoomUrl = item.liveRoomUrl || LIVE_ROOM_URLS[item.category];
         const config = getMemberConfig(item.category, displayMode, liveRoomUrl);
@@ -820,6 +881,13 @@ function App() {
             setView('settings');
             return;
         }
+
+        // 显示感谢弹窗
+        setShowThankYouModal(true);
+    };
+
+    const proceedWithSync = async () => {
+        setShowThankYouModal(false);
         setIsSyncing(true);
         const urls = icsUrls.split('\n').filter(u => u.trim().startsWith('http'));
         let totalAdded = 0;
@@ -1408,13 +1476,153 @@ function App() {
                     <div
                         className="h-full max-w-2xl mx-auto p-4 md:p-8 overflow-y-auto custom-scrollbar space-y-6 text-slate-900 dark:text-slate-100">
 
-                        <section
-                            className="p-6 rounded-2xl bg-white dark:bg-slate-900 border dark:border-slate-800 shadow-sm">
-                            <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
-                                <Icon name="refresh" className="w-5 h-5 text-purple-500" /> GitHub Gist 云同步
-                            </h3>
+                        <SettingsSection
+                            title="外观选项"
+                            icon="palette"
+                            iconColor="text-purple-500"
+                            description="自定义日程的显示样式和配色方案"
+                        >
+                            <div className="space-y-4">
+                                <div className="p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <div className="font-medium">显示模式</div>
+                                            <div className="text-xs text-slate-500">
+                                                {displayMode === 'single' ? '多成员日程使用主要成员颜色' : '多成员日程用渐变色显示所有成员颜色'}
+                                            </div>
+                                        </div>
+                                        <select
+                                            className="px-3 py-2 border dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-800 outline-none text-slate-900 dark:text-slate-100"
+                                            value={displayMode}
+                                            onChange={(e) => {
+                                                setDisplayMode(e.target.value);
+                                                localStorage.setItem(DISPLAY_MODE_KEY, e.target.value);
+                                            }}
+                                        >
+                                            <option value="single">单一颜色模式</option>
+                                            <option value="multi-color">多色分割模式</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                    <div>
+                                        <div className="font-medium">{useSpecialGroupColor ? '开启组合配色' : '关闭组合配色'}</div>
+                                        <div className="text-xs text-slate-500">
+                                            {useSpecialGroupColor ? 'A-SOUL和小心思组合使用单独的配色' : 'A-SOUL和小心思组合和其他日程一样显示'}
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            const newValue = !useSpecialGroupColor;
+                                            setUseSpecialGroupColor(newValue);
+                                            localStorage.setItem(SPECIAL_GROUP_COLOR_KEY, newValue.toString());
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${useSpecialGroupColor ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
+                                    >
+                                        <span
+                                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useSpecialGroupColor ? 'translate-x-6' : 'translate-x-1'}`}
+                                        />
+                                    </button>
+                                </div>
+
+                                <div className="p-4 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="font-medium">自定义成员颜色</div>
+                                        <button
+                                            onClick={() => {
+                                                if (confirm('确定要恢复所有成员的默认颜色吗？')) {
+                                                    setCustomColors({});
+                                                }
+                                            }}
+                                            className="text-xs px-2 py-1 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 transition-colors"
+                                        >
+                                            恢复默认
+                                        </button>
+                                    </div>
+                                    <div className="text-xs text-slate-500 mb-3">点击颜色块可以自定义每个成员的背景色</div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {Object.keys(DEFAULT_MEMBER_CONFIG).map(member => {
+                                            const currentColor = customColors[member]?.color || DEFAULT_MEMBER_CONFIG[member].color;
+                                            return (
+                                                <div key={member} className="flex items-center gap-2">
+                                                    <input
+                                                        type="color"
+                                                        value={currentColor}
+                                                        onChange={(e) => {
+                                                            setCustomColors(prev => ({
+                                                                ...prev,
+                                                                [member]: {
+                                                                    color: e.target.value,
+                                                                    textColor: '#FFFFFF'
+                                                                }
+                                                            }));
+                                                        }}
+                                                        className="w-10 h-10 rounded cursor-pointer border-2 border-slate-300 dark:border-slate-600"
+                                                        title={`选择${member}的颜色`}
+                                                    />
+                                                    <div className="flex-1">
+                                                        <div className="text-sm font-medium">{member}</div>
+                                                        <div className="text-xs text-slate-500 font-mono">{currentColor}</div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        </SettingsSection>
+
+                        <SettingsSection
+                            title="数据管理"
+                            icon="download"
+                            iconColor="text-blue-500"
+                            description="导入导出数据，管理本地存储"
+                        >
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <button onClick={() => {
+                                        const blob = new Blob([JSON.stringify(schedules, null, 2)], { type: 'application/json' });
+                                        const a = document.createElement('a');
+                                        a.href = URL.createObjectURL(blob);
+                                        a.download = `asoul_backup_all.json`;
+                                        a.click();
+                                    }} className="flex items-center justify-center gap-2 p-3 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold italic"><Icon name="download" /> 导出全部</button>
+                                    <button onClick={() => {
+                                        const calendarSchedules = schedules.filter(s => !s.isAnime);
+                                        const blob = new Blob([JSON.stringify(calendarSchedules, null, 2)], { type: 'application/json' });
+                                        const a = document.createElement('a');
+                                        a.href = URL.createObjectURL(blob);
+                                        a.download = `asoul_backup_calendar.json`;
+                                        a.click();
+                                    }} className="flex items-center justify-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 rounded-xl font-bold italic"><Icon name="calendar" /> 只导出日历</button>
+                                    <button onClick={() => {
+                                        const animeSchedules = schedules.filter(s => s.isAnime);
+                                        const blob = new Blob([JSON.stringify(animeSchedules, null, 2)], { type: 'application/json' });
+                                        const a = document.createElement('a');
+                                        a.href = URL.createObjectURL(blob);
+                                        a.download = `asoul_backup_anime.json`;
+                                        a.click();
+                                    }} className="flex items-center justify-center gap-2 p-3 bg-orange-50 dark:bg-orange-900/10 text-orange-600 dark:text-orange-400 rounded-xl font-bold italic"><Icon name="calendar-days" /> 只导出追番表</button>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <button onClick={() => fileInputRef.current.click()} className="flex items-center justify-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 rounded-xl font-bold italic">
+                                        <Icon name="upload" /> 导入 JSON
+                                        <input type="file" ref={fileInputRef} onChange={handleImportJSON} accept=".json" className="hidden" />
+                                    </button>
+                                    <button onClick={() => { if (confirm('确定清空所有数据？这将同时删除已导入的订阅日程。')) { setSchedules([]); localStorage.removeItem(STORAGE_KEY); } }} className="flex items-center justify-center gap-2 p-3 text-red-500 bg-red-50 dark:bg-red-900/10 rounded-xl font-bold italic"><Icon name="trash-2" /> 清空所有数据</button>
+                                </div>
+                            </div>
+                        </SettingsSection>
+
+                        <SettingsSection
+                            title="GitHub Gist 云同步"
+                            icon="refresh"
+                            iconColor="text-purple-500"
+                            description="使用 GitHub Gist 在多设备间同步数据"
+                        >
                             <p className="text-xs text-slate-500 mb-4 italic">
-                                使用 GitHub Gist 在多设备间同步数据。需要 GitHub Personal Access Token（需要 gist 权限）。
+                                需要 GitHub Personal Access Token（需要 gist 权限）。
                                 <a
                                     href="https://github.com/settings/tokens/new?description=ASoul%20Calendar&scopes=gist"
                                     target="_blank"
@@ -1485,14 +1693,22 @@ function App() {
                                     <p>• 替换为 Gist：用 Gist 中的数据完全替换本地数据</p>
                                 </div>
                             </div>
-                        </section>
+                        </SettingsSection>
 
-                        <section
-                            className="p-6 rounded-2xl bg-white dark:bg-slate-900 border dark:border-slate-800 shadow-sm">
-                            <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
-                                <Icon name="refresh" className="w-5 h-5 text-emerald-500" /> ICS 日历订阅
-                            </h3>
-                            <p className="text-xs text-slate-500 mb-4 italic">输入 ICS 订阅链接，每行一个。同步时将自动提取 Tag 和 B 站链接。</p>
+                        <SettingsSection
+                            title="ICS 日历订阅"
+                            icon="refresh"
+                            iconColor="text-emerald-500"
+                            description="输入 ICS 订阅链接，同步日历数据"
+                        >
+
+                            <p className="text-xs text-slate-500 mb-4 italic">同步时将自动提取 Tag 和 B 站链接。首次使用，请前往枝江站(asoul.love)获取订阅链接，<a
+                                href="https://asoul.love/calendar/latest"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 dark:text-blue-400 hover:underline ml-1"
+                            >
+                                点此前往</a></p>
                             <textarea
                                 className="w-full h-24 p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-slate-50 dark:bg-slate-800 font-mono mb-2"
                                 placeholder="https://example.com/calendar.ics" value={icsUrls} onChange={e => setIcsUrls(e.target.value)} />
@@ -1516,109 +1732,24 @@ function App() {
                                     导入本地ICS文件
                                 </label>
                             </div>
-                        </section>
+                        </SettingsSection>
 
-                        <section className="p-6 rounded-2xl bg-white dark:bg-slate-900 border dark:border-slate-800 shadow-sm">
-                            <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
-                                <Icon name="palette" className="w-5 h-5 text-purple-500" /> 外观选项
-                            </h3>
-                            <p className="text-xs text-slate-500 mb-4 italic">自定义日程的显示样式和配色方案。</p>
-
-                            <div className="space-y-4">
-                                <div className="p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <div className="font-medium">显示模式</div>
-                                            <div className="text-xs text-slate-500">
-                                                {displayMode === 'single' ? '多成员日程使用主要成员颜色' : '多成员日程用渐变色显示所有成员颜色'}
-                                            </div>
-                                        </div>
-                                        <select
-                                            className="px-3 py-2 border dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-800 outline-none text-slate-900 dark:text-slate-100"
-                                            value={displayMode}
-                                            onChange={(e) => {
-                                                setDisplayMode(e.target.value);
-                                                localStorage.setItem(DISPLAY_MODE_KEY, e.target.value);
-                                            }}
-                                        >
-                                            <option value="single">单一颜色模式</option>
-                                            <option value="multi-color">多色分割模式</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                    <div>
-                                        <div className="font-medium">{useSpecialGroupColor ? '开启组合配色' : '关闭组合配色'}</div>
-                                        <div className="text-xs text-slate-500">
-                                            {useSpecialGroupColor ? 'A-SOUL和小心思组合使用单独的配色' : 'A-SOUL和小心思组合和其他日程一样显示'}
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={() => {
-                                            const newValue = !useSpecialGroupColor;
-                                            setUseSpecialGroupColor(newValue);
-                                            localStorage.setItem(SPECIAL_GROUP_COLOR_KEY, newValue.toString());
-                                        }}
-                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${useSpecialGroupColor ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
-                                    >
-                                        <span
-                                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useSpecialGroupColor ? 'translate-x-6' : 'translate-x-1'}`}
-                                        />
-                                    </button>
-                                </div>
-                            </div>
-                        </section>
-
-                        <section className="p-6 rounded-2xl bg-white dark:bg-slate-900 border dark:border-slate-800 shadow-sm">
-                            <h3 className="font-bold text-lg mb-4">解析文本日程</h3>
+                        <SettingsSection
+                            title="解析文本日程"
+                            icon="plus"
+                            iconColor="text-blue-500"
+                            description="粘贴文本格式的日程数据进行批量导入"
+                        >
                             <textarea className="w-full h-48 p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-slate-50 dark:bg-slate-800 font-mono" placeholder="在此粘贴日程文本..." value={inputText} onChange={e => setInputText(e.target.value)} />
                             <button onClick={() => parseText(inputText)} disabled={!inputText.trim()} className="mt-4 w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold disabled:opacity-50 transition-all">导入并保存</button>
-                        </section>
+                        </SettingsSection>
 
-                        <section className="p-6 rounded-2xl bg-white dark:bg-slate-900 border dark:border-slate-800 shadow-sm">
-                            <h3 className="font-bold text-lg mb-4">数据管理</h3>
-                            <div className="space-y-4">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <button onClick={() => {
-                                        const blob = new Blob([JSON.stringify(schedules, null, 2)], { type: 'application/json' });
-                                        const a = document.createElement('a');
-                                        a.href = URL.createObjectURL(blob);
-                                        a.download = `asoul_backup_all.json`;
-                                        a.click();
-                                    }} className="flex items-center justify-center gap-2 p-3 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold italic"><Icon name="download" /> 导出全部</button>
-                                    <button onClick={() => {
-                                        const calendarSchedules = schedules.filter(s => !s.isAnime);
-                                        const blob = new Blob([JSON.stringify(calendarSchedules, null, 2)], { type: 'application/json' });
-                                        const a = document.createElement('a');
-                                        a.href = URL.createObjectURL(blob);
-                                        a.download = `asoul_backup_calendar.json`;
-                                        a.click();
-                                    }} className="flex items-center justify-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 rounded-xl font-bold italic"><Icon name="calendar" /> 只导出日历</button>
-                                    <button onClick={() => {
-                                        const animeSchedules = schedules.filter(s => s.isAnime);
-                                        const blob = new Blob([JSON.stringify(animeSchedules, null, 2)], { type: 'application/json' });
-                                        const a = document.createElement('a');
-                                        a.href = URL.createObjectURL(blob);
-                                        a.download = `asoul_backup_anime.json`;
-                                        a.click();
-                                    }} className="flex items-center justify-center gap-2 p-3 bg-orange-50 dark:bg-orange-900/10 text-orange-600 dark:text-orange-400 rounded-xl font-bold italic"><Icon name="calendar-days" /> 只导出追番表</button>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <button onClick={() => fileInputRef.current.click()} className="flex items-center justify-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 rounded-xl font-bold italic">
-                                        <Icon name="upload" /> 导入 JSON
-                                        <input type="file" ref={fileInputRef} onChange={handleImportJSON} accept=".json" className="hidden" />
-                                    </button>
-                                    <button onClick={() => { if (confirm('确定清空所有数据？这将同时删除已导入的订阅日程。')) { setSchedules([]); localStorage.removeItem(STORAGE_KEY); } }} className="flex items-center justify-center gap-2 p-3 text-red-500 bg-red-50 dark:bg-red-900/10 rounded-xl font-bold italic"><Icon name="trash-2" /> 清空所有数据</button>
-                                </div>
-                            </div>
-                        </section>
-
-                        <section className="p-6 rounded-2xl bg-white dark:bg-slate-900 border dark:border-slate-800 shadow-sm">
-                            <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-                                {/*<Icon name="info" className="w-5 h-5 text-blue-500" /> */}
-                                关于
-                            </h3>
+                        <SettingsSection
+                            title="关于"
+                            icon="calendar"
+                            iconColor="text-blue-500"
+                            description="应用信息和免责声明"
+                        >
                             <div className="space-y-4">
                                 <div className="text-sm">
                                     <div className="font-medium text-slate-900 dark:text-slate-100">枝江追番表</div>
@@ -1653,7 +1784,7 @@ function App() {
                                     <div className="text-slate-500 dark:text-slate-400">如有问题或建议，请联系开发者</div>
                                 </div>
                             </div>
-                        </section>
+                        </SettingsSection>
                     </div>
                 )}
             </main>
@@ -1693,7 +1824,7 @@ function App() {
                         <div className="grid grid-cols-2 gap-4">
                             <div><label className="text-xs font-bold text-slate-500 mb-1.5 block">成员</label>
                                 <select className="w-full p-2.5 border dark:border-slate-700 rounded-xl text-sm bg-slate-50 dark:bg-slate-800 outline-none text-slate-900 dark:text-slate-100" value={newSchedule.category} onChange={e => setNewSchedule({ ...newSchedule, category: e.target.value })}>
-                                    {Object.keys(MEMBER_CONFIG).map(name => <option key={name} value={name}>{name}</option>)}
+                                    {Object.keys(DEFAULT_MEMBER_CONFIG).map(name => <option key={name} value={name}>{name}</option>)}
                                 </select>
                             </div>
                             <div><label className="text-xs font-bold text-slate-500 mb-1.5 block">类型</label>
@@ -1739,6 +1870,48 @@ function App() {
                         <div className="flex gap-3 pt-4">
                             <button onClick={() => setIsAddModalOpen(false)} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-sm font-bold">取消</button>
                             <button onClick={handleManualAdd} className="flex-1 py-3 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-lg">确认添加</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 感谢弹窗 */}
+            {showThankYouModal && (
+                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md border dark:border-slate-800 p-8 space-y-6">
+                        <div className="text-center space-y-4">
+                            <div className="flex justify-center">
+                                <div className="w-16 h-16 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center">
+                                    <Icon name="star" className="w-8 h-8 text-white" />
+                                </div>
+                            </div>
+                            <div>
+                                <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">
+                                    订阅信息来源
+                                </h3>
+                                <p className="text-slate-600 dark:text-slate-400 text-sm">
+                                    订阅信息来自 <span className="font-bold text-pink-600 dark:text-pink-400">枝江站(asoul.love)</span>
+                                </p>
+                            </div>
+                            <div className="bg-gradient-to-r from-pink-50 to-purple-50 dark:from-pink-950/30 dark:to-purple-950/30 rounded-xl p-4 border border-pink-200 dark:border-pink-800">
+                                <p className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-purple-600">
+                                    感谢枝江站的分享与支持！
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex gap-3 pt-2">
+                            <button
+                                onClick={() => setShowThankYouModal(false)}
+                                className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={proceedWithSync}
+                                className="flex-1 py-3 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-xl text-sm font-bold shadow-lg hover:shadow-xl transition-all"
+                            >
+                                继续同步
+                            </button>
                         </div>
                     </div>
                 </div>
