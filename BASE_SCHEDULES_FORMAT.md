@@ -111,7 +111,7 @@
 // 从现有数据生成基础日程库
 const schedules = [...]; // 你的日程数据
 const baseSchedules = {
-  version: new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14),
+  version: new Date().toISOString().replace(/[\-:T.]/g, '').slice(0, 14),
   schedules: schedules.map(s => ({
     id: s.id,
     date: s.date,

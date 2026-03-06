@@ -2083,7 +2083,7 @@ function App() {
                                         const blob = new Blob([JSON.stringify(userData, null, 2)], { type: 'application/json' });
                                         const a = document.createElement('a');
                                         a.href = URL.createObjectURL(blob);
-                                        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
+                                        const timestamp = new Date().toISOString().replace(/[\-:T.]/g, '').slice(0, 14);
                                         a.download = `user-data-${timestamp}.json`;
                                         a.click();
                                     }} className="flex items-center justify-center gap-2 p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md transition-all">
