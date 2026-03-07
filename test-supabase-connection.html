@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supabase 连接测试工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+            font-family: 'Courier New', monospace;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .result {
+            margin-top: 20px;
+            padding: 16px;
+            border-radius: 10px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .result.success {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+
+        .result.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+
+        .result.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 2px solid #bee5eb;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .tip {
+            background: #fff3cd;
+            border: 2px solid #ffeaa7;
+            color: #856404;
+            padding: 12px;
+            border-radius: 10px;
+            margin-top: 20px;
+            font-size: 13px;
+        }
+
+        .tip strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔧 Supabase 连接测试</h1>
+        <p class="subtitle">测试你的 Supabase 配置是否正确</p>
+
+        <div class="form-group">
+            <label for="url">Supabase URL</label>
+            <input type="text" id="url" placeholder="https://xxxxx.supabase.co">
+        </div>
+
+        <div class="form-group">
+            <label for="key">Supabase Anon Key</label>
+            <input type="password" id="key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+        </div>
+
+        <div class="form-group">
+            <label for="syncId">测试同步 ID</label>
+            <input type="text" id="syncId" placeholder="test_user_123" value="test_user_123">
+        </div>
+
+        <button onclick="testConnection()" id="testBtn">
+            开始测试连接
+        </button>
+
+        <div id="result"></div>
+
+        <div class="tip">
+            <strong>💡 提示：</strong>
+            此工具会测试以下内容：<br>
+            1. Supabase 连接是否正常<br>
+            2. 数据表是否已创建<br>
+            3. 上传和下载功能是否正常<br>
+            4. 测试完成后会自动清理测试数据
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        async function testConnection() {
+            const url = document.getElementById('url').value.trim();
+            const key = document.getElementById('key').value.trim();
+            const syncId = document.getElementById('syncId').value.trim();
+            const resultDiv = document.getElementById('result');
+            const testBtn = document.getElementById('testBtn');
+
+            // 验证输入
+            if (!url || !key || !syncId) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = '❌ 请填写所有字段';
+                return;
+            }
+
+            // 开始测试
+            testBtn.disabled = true;
+            testBtn.innerHTML = '<span class="loading"></span>测试中...';
+            resultDiv.className = 'result info';
+            resultDiv.innerHTML = '⏳ 正在测试连接...';
+
+            try {
+                // 创建 Supabase 客户端
+                const supabase = window.supabase.createClient(url, key);
+
+                // 测试 1: 连接测试
+                resultDiv.innerHTML += '<br>✓ Supabase 客户端创建成功';
+
+                // 测试 2: 上传数据
+                const testData = {
+                    sync_id: syncId,
+                    user_data: {
+                        test: true,
+                        timestamp: new Date().toISOString(),
+                        message: '这是一条测试数据'
+                    },
+                    updated_at: new Date().toISOString()
+                };
+
+                resultDiv.innerHTML += '<br>⏳ 正在测试上传功能...';
+
+                // 先尝试删除可能存在的测试数据
+                await supabase
+                    .from('asoul_sync_data')
+                    .delete()
+                    .eq('sync_id', syncId);
+
+                // 插入测试数据
+                const { data: insertData, error: insertError } = await supabase
+                    .from('asoul_sync_data')
+                    .insert([testData])
+                    .select();
+
+                if (insertError) {
+                    throw new Error('上传失败: ' + insertError.message);
+                }
+
+                resultDiv.innerHTML += '<br>✓ 数据上传成功';
+
+                // 测试 3: 下载数据
+                resultDiv.innerHTML += '<br>⏳ 正在测试下载功能...';
+
+                const { data: selectData, error: selectError } = await supabase
+                    .from('asoul_sync_data')
+                    .select('user_data, updated_at')
+                    .eq('sync_id', syncId)
+                    .single();
+
+                if (selectError) {
+                    throw new Error('下载失败: ' + selectError.message);
+                }
+
+                resultDiv.innerHTML += '<br>✓ 数据下载成功';
+
+                // 验证数据
+                if (selectData.user_data.test === true) {
+                    resultDiv.innerHTML += '<br>✓ 数据验证成功';
+                } else {
+                    throw new Error('数据验证失败');
+                }
+
+                // 测试 4: 清理测试数据
+                resultDiv.innerHTML += '<br>⏳ 正在清理测试数据...';
+
+                const { error: deleteError } = await supabase
+                    .from('asoul_sync_data')
+                    .delete()
+                    .eq('sync_id', syncId);
+
+                if (deleteError) {
+                    resultDiv.innerHTML += '<br>⚠️ 清理测试数据失败（不影响使用）';
+                } else {
+                    resultDiv.innerHTML += '<br>✓ 测试数据已清理';
+                }
+
+                // 测试成功
+                resultDiv.className = 'result success';
+                resultDiv.innerHTML = `
+                    <strong>🎉 测试成功！</strong><br><br>
+                    ✓ Supabase 连接正常<br>
+                    ✓ 数据表配置正确<br>
+                    ✓ 上传功能正常<br>
+                    ✓ 下载功能正常<br>
+                    ✓ 数据验证通过<br><br>
+                    你可以在应用中使用这些配置了！
+                `;
+
+            } catch (error) {
+                console.error('测试失败:', error);
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `
+                    <strong>❌ 测试失败</strong><br><br>
+                    错误信息: ${error.message}<br><br>
+                    <strong>可能的原因：</strong><br>
+                    1. URL 或 Key 不正确<br>
+                    2. 数据表未创建（请执行 supabase-setup.sql）<br>
+                    3. 网络连接问题<br>
+                    4. Supabase 项目未启动
+                `;
+            } finally {
+                testBtn.disabled = false;
+                testBtn.innerHTML = '重新测试';
+            }
+        }
+    </script>
+</body>
+
+</html>

@@ -1,5 +1,7 @@
 ﻿import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
 import './App.css';
+import { getSupabaseConfig, saveSupabaseConfig, isUsingDefaultConfig } from './supabaseClient';
+import { getSyncId, saveSyncId, uploadToSupabase, downloadFromSupabase, canSync, getTimeUntilNextSync } from './supabaseSync';
 const STORAGE_KEY = 'asoul_calendar_data';
 const USER_DATA_KEY = 'asoul_user_data'; // 用户个性化数据（完成状态、备注等）
 const BASE_SCHEDULES_KEY = 'asoul_base_schedules'; // 基础日程库缓存
@@ -365,6 +367,23 @@ function App() {
         return saved ? JSON.parse(saved) : {};
     });
 
+    // Supabase 同步相关状态
+    const [supabaseUrl, setSupabaseUrl] = useState(() => {
+        const config = getSupabaseConfig();
+        return config.isCustom ? config.url : '';
+    });
+    const [supabaseKey, setSupabaseKey] = useState(() => {
+        const config = getSupabaseConfig();
+        return config.isCustom ? config.key : '';
+    });
+    const [syncId, setSyncId] = useState(() => getSyncId() || '');
+    const [isSupabaseSyncing, setIsSupabaseSyncing] = useState(false);
+    const [syncCooldown, setSyncCooldown] = useState(0);
+    const [showCustomConfig, setShowCustomConfig] = useState(() => {
+        const config = getSupabaseConfig();
+        return config.isCustom;
+    });
+
     const [newSchedule, setNewSchedule] = useState({
         date: formatDateString(new Date()),
         time: '20:00',
@@ -523,6 +542,36 @@ function App() {
         // 强制重新渲染以应用新颜色
         setSchedules(prev => [...prev]);
     }, [customColors]);
+
+    // 保存 Supabase 配置
+    useEffect(() => {
+        if (showCustomConfig && supabaseUrl && supabaseKey) {
+            saveSupabaseConfig(supabaseUrl, supabaseKey);
+        } else if (!showCustomConfig) {
+            // 清除自定义配置，使用默认配置
+            saveSupabaseConfig('', '');
+        }
+    }, [supabaseUrl, supabaseKey, showCustomConfig]);
+
+    // 保存同步 ID
+    useEffect(() => {
+        if (syncId) {
+            saveSyncId(syncId);
+        }
+    }, [syncId]);
+
+    // 更新同步冷却时间
+    useEffect(() => {
+        const updateCooldown = () => {
+            const remaining = getTimeUntilNextSync();
+            setSyncCooldown(remaining);
+        };
+
+        updateCooldown();
+        const interval = setInterval(updateCooldown, 1000);
+
+        return () => clearInterval(interval);
+    }, []);
 
     useEffect(() => {
         const root = document.documentElement;
@@ -1114,7 +1163,7 @@ function App() {
 
                 if (Array.isArray(importedData)) {
                     // 旧格式：完整日程数组，需要转换为用户数据格式
-                    alert('检测到旧格式数据，正在转换...');
+                    alert('检测到旧格式或特殊属性数据，正在转换...');
                     importedData.forEach(schedule => {
                         if (schedule.isUserCreated) {
                             userData[schedule.id] = { ...schedule, isUserCreated: true };
@@ -1600,6 +1649,152 @@ function App() {
         }
     };
 
+    // Supabase 上传数据
+    const handleUploadToSupabase = async () => {
+        if (!syncId || !syncId.trim()) {
+            alert('请先设置同步 ID');
+            return;
+        }
+
+        setIsSupabaseSyncing(true);
+        try {
+            // 提取用户数据
+            const userData = {};
+
+            schedules.forEach(schedule => {
+                if (schedule.isUserCreated) {
+                    userData[schedule.id] = { ...schedule, isUserCreated: true };
+                } else if (schedule.isBaseSchedule) {
+                    const userModifications = {};
+                    if (schedule.completed) userModifications.completed = true;
+                    if (schedule.note) userModifications.note = schedule.note;
+                    if (schedule.link && schedule.link.trim()) {
+                        const isSystemLink = schedule.link === schedule.liveRoomUrl ||
+                            schedule.link === schedule.dynamicUrl ||
+                            schedule.link === schedule.icsUrl;
+                        if (!isSystemLink) {
+                            userModifications.link = schedule.link;
+                        }
+                    }
+                    if (schedule.isFavorite) userModifications.isFavorite = true;
+                    if (schedule.isAnime) userModifications.isAnime = true;
+
+                    if (Object.keys(userModifications).length > 0) {
+                        userData[schedule.id] = userModifications;
+                    }
+                }
+            });
+
+            await uploadToSupabase(userData, syncId);
+
+            const dataCount = Object.keys(userData).length;
+            const dataSizeKB = (new Blob([JSON.stringify(userData)]).size / 1024).toFixed(2);
+
+            alert(`数据已成功上传到 Supabase！\n\n同步 ID: ${syncId}\n用户数据记录：${dataCount} 条\n文件大小：${dataSizeKB} KB`);
+
+            // 更新冷却时间
+            setSyncCooldown(300);
+        } catch (err) {
+            console.error('Supabase 上传错误:', err);
+            alert('上传失败：' + err.message);
+        } finally {
+            setIsSupabaseSyncing(false);
+        }
+    };
+
+    // Supabase 下载数据
+    const handleDownloadFromSupabase = async () => {
+        if (!syncId || !syncId.trim()) {
+            alert('请先设置同步 ID');
+            return;
+        }
+
+        setIsSupabaseSyncing(true);
+        try {
+            const result = await downloadFromSupabase(syncId);
+            const userData = result.user_data;
+
+            if (!userData || typeof userData !== 'object') {
+                throw new Error('数据格式不正确');
+            }
+
+            // 获取当前用户数据
+            const currentUserData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
+
+            // 合并用户数据
+            let addedCount = 0;
+            let updatedCount = 0;
+
+            Object.keys(userData).forEach(id => {
+                if (currentUserData[id]) {
+                    if (userData[id].isUserCreated) {
+                        currentUserData[id] = userData[id];
+                    } else {
+                        const existing = currentUserData[id];
+                        const imported = userData[id];
+
+                        if (imported.note) {
+                            if (existing.note && existing.note !== imported.note) {
+                                currentUserData[id].note = `${existing.note}\n---\n${imported.note}`;
+                            } else {
+                                currentUserData[id].note = imported.note;
+                            }
+                        }
+
+                        if (imported.completed) currentUserData[id].completed = true;
+                        if (imported.link) currentUserData[id].link = imported.link;
+                        if (imported.isFavorite) currentUserData[id].isFavorite = true;
+                        if (imported.isAnime) currentUserData[id].isAnime = true;
+                    }
+                    updatedCount++;
+                } else {
+                    currentUserData[id] = userData[id];
+                    addedCount++;
+                }
+            });
+
+            // 保存合并后的用户数据
+            localStorage.setItem(USER_DATA_KEY, JSON.stringify(currentUserData));
+
+            // 重新加载日程
+            const baseSchedules = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
+
+            const mergedSchedules = baseSchedules.map(baseItem => {
+                const userItem = currentUserData[baseItem.id];
+                return {
+                    ...baseItem,
+                    completed: userItem?.completed || false,
+                    note: userItem?.note || '',
+                    link: userItem?.link || baseItem.link || '',
+                    isFavorite: userItem?.isFavorite || false,
+                    isAnime: userItem?.isAnime || baseItem.isAnime || false,
+                    isBaseSchedule: true
+                };
+            });
+
+            const userSchedules = Object.values(currentUserData)
+                .filter(item => item.isUserCreated)
+                .map(item => ({
+                    ...item,
+                    isAnime: item.isAnime || false,
+                    isFavorite: item.isFavorite || false
+                }));
+
+            setSchedules([...mergedSchedules, ...userSchedules]);
+
+            const updateTime = new Date(result.updated_at).toLocaleString('zh-CN');
+            alert(`成功从 Supabase 下载数据！\n\n同步 ID: ${syncId}\n新增：${addedCount} 条\n更新：${updatedCount} 条\n更新时间：${updateTime}`);
+
+            // 更新冷却时间
+            setSyncCooldown(300);
+        } catch (err) {
+            console.error('Supabase 下载错误:', err);
+            alert('下载失败：' + err.message);
+        } finally {
+            setIsSupabaseSyncing(false);
+        }
+    };
+
     return (
         <div className="flex flex-col h-screen transition-colors duration-300 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100">
             <header
@@ -2045,9 +2240,7 @@ function App() {
                             description="导入导出数据，管理本地存储"
                         >
                             <div className="space-y-4">
-                                <div className="text-xs text-slate-500 mb-3 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg">
-                                    <strong>说明：</strong>导出的是用户个性化数据（完成状态、备注、用户创建的日程等），不包含基础日程库。
-                                </div>
+
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <button onClick={() => {
                                         // 提取用户数据
@@ -2094,7 +2287,59 @@ function App() {
                                         <input type="file" ref={fileInputRef} onChange={handleImportJSON} accept=".json" className="hidden" />
                                     </button>
                                 </div>
+                                <div className="text-xs text-slate-500 mb-3 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg">
+                                    <strong>说明：</strong>导出的是用户个性化数据（完成状态、备注、用户创建的日程等），不包含基础日程库。
+                                </div>
+
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <button onClick={() => {
+                                        // 仅导出用户额外添加的日程
+                                        const userCreatedSchedules = schedules
+                                            .filter(schedule => schedule.isUserCreated)
+                                            .map(schedule => ({ ...schedule }));
+
+                                        if (userCreatedSchedules.length === 0) {
+                                            alert('没有用户创建的日程可以导出');
+                                            return;
+                                        }
+
+                                        const blob = new Blob([JSON.stringify(userCreatedSchedules, null, 2)], { type: 'application/json' });
+                                        const a = document.createElement('a');
+                                        a.href = URL.createObjectURL(blob);
+                                        const timestamp = new Date().toISOString().replace(/[\-:T.]/g, '').slice(0, 14);
+                                        a.download = `user-created-schedules-${timestamp}.json`;
+                                        a.click();
+                                    }} className="flex items-center justify-center gap-2 p-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold shadow-md transition-all">
+                                        <Icon name="download" /> 仅导出添加的日程
+                                    </button>
+                                    <button onClick={() => {
+                                        // 导出除完成状态、跳转链接以外的日程
+                                        const cleanedSchedules = schedules.map(schedule => {
+                                            const cleaned = { ...schedule };
+                                            // 移除完成状态
+                                            delete cleaned.completed;
+                                            // 移除所有链接相关字段
+                                            // delete cleaned.link;
+                                            // delete cleaned.liveRoomUrl;
+                                            // delete cleaned.dynamicUrl;
+                                            // delete cleaned.icsUrl;
+                                            return cleaned;
+                                        });
+
+                                        const blob = new Blob([JSON.stringify(cleanedSchedules, null, 2)], { type: 'application/json' });
+                                        const a = document.createElement('a');
+                                        a.href = URL.createObjectURL(blob);
+                                        const timestamp = new Date().toISOString().replace(/[\-:T.]/g, '').slice(0, 14);
+                                        a.download = `schedules-clean-${timestamp}.json`;
+                                        a.click();
+                                    }} className="flex items-center justify-center gap-2 p-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md transition-all">
+                                        <Icon name="download" /> 导出除完成状态以外的日程
+                                    </button>
+                                </div>
+                                <div className="text-xs text-slate-500 mb-3 p-3 bg-purple-50 dark:bg-purple-900/10 rounded-lg">
+                                    <strong>说明：</strong>仅添加的日程可用于分享日程表外的视频，除完成状态以外的日程则可以连同日程表中的备注一同分享
+                                </div>
+                                <div className="grid grid-cols-1 gap-4">
                                     <button onClick={() => {
                                         if (confirm('确定清空所有用户数据？\n\n这将清除：\n- 所有完成状态\n- 所有备注\n- 所有用户创建的日程\n- 所有收藏\n\n基础日程库不会被删除。')) {
                                             // 只清空用户数据
@@ -2115,8 +2360,12 @@ function App() {
                                     }} className="flex items-center justify-center gap-2 p-3 text-red-600 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-xl font-bold transition-all">
                                         <Icon name="trash-2" /> 清空用户数据
                                     </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-4 hidden">
                                     <button onClick={() => {
                                         if (confirm('⚠️ 危险操作：清除所有数据\n\n这将清除：\n- 所有用户数据（完成状态、备注、用户日程等）\n- 基础日程库缓存\n- 所有本地存储数据\n\n确定要继续吗？')) {
+                                            // 清空所有数据，默认隐藏，需要显示请删除div className中的hidden
                                             // 清除所有相关的 localStorage 数据
                                             localStorage.removeItem(USER_DATA_KEY);
                                             localStorage.removeItem(BASE_SCHEDULES_KEY);
@@ -2217,6 +2466,125 @@ function App() {
                                     <p>• 合并用户数据：从 Gist 下载数据并与本地数据智能合并</p>
                                     <p>• 替换用户数据：用 Gist 中的数据完全替换本地用户数据</p>
                                     <p>• 兼容旧格式：自动识别并转换旧版本的完整数据格式</p>
+                                </div>
+                            </div>
+                        </SettingsSection>
+
+                        <SettingsSection
+                            title="Supabase 云同步"
+                            icon="refresh"
+                            iconColor="text-green-500"
+                            description="使用 Supabase 数据库在多设备间同步用户数据"
+                        >
+                            <div className="text-xs text-slate-500 mb-3 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg">
+                                <strong>说明：</strong>只同步用户个性化数据（完成状态、备注、用户创建的日程等），不包含基础日程库。使用默认服务器，每5分钟可执行一次同步。使用自定义服务器无同步限制。
+                            </div>
+                            <div className="text-xs text-slate-500 mb-3 p-3 bg-blue-50 dark:bg-blue-200/10 rounded-lg">
+                                <strong>⚠️提示：</strong>请注意！默认同步服务是一个非常简易的公开数据库，我们无法向您保证数据的安全，您的数据很宝贵，如需稳定同步，建议使用自定义的服务器（个人使用免费）⚠️
+                            </div>
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 mb-1.5 block">
+                                        同步 ID（用于区分不同用户的数据，请设置一个唯一的标识符）
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="w-full p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-slate-50 dark:bg-slate-800 font-mono"
+                                        placeholder="例如：user_12345 或任意唯一标识"
+                                        value={syncId}
+                                        onChange={e => setSyncId(e.target.value)}
+                                    />
+                                    <div className="text-xs text-slate-500 mt-1">
+                                        ⚠️ 同步 ID 相同的设备会共享数据，请妥善保管
+                                    </div>
+                                </div>
+
+                                {syncCooldown > 0 && (
+                                    <div className="p-3 bg-yellow-50 dark:bg-yellow-900/10 rounded-lg text-xs text-yellow-700 dark:text-yellow-400">
+                                        ⏱️ 同步冷却中，还需等待 {Math.floor(syncCooldown / 60)}分{syncCooldown % 60}秒
+                                    </div>
+                                )}
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                                    <button
+                                        onClick={handleUploadToSupabase}
+                                        disabled={isSupabaseSyncing || !syncId || syncCooldown > 0}
+                                        className="py-3 bg-green-600 hover:bg-green-700 disabled:bg-slate-400 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
+                                    >
+                                        {isSupabaseSyncing ? <Icon name="refresh" className="w-4 h-4 animate-spin" /> : <Icon name="upload" className="w-4 h-4" />}
+                                        {isSupabaseSyncing ? '上传中...' : '上传到云端'}
+                                    </button>
+
+                                    <button
+                                        onClick={handleDownloadFromSupabase}
+                                        disabled={isSupabaseSyncing || !syncId || syncCooldown > 0}
+                                        className="py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
+                                    >
+                                        {isSupabaseSyncing ? <Icon name="refresh" className="w-4 h-4 animate-spin" /> : <Icon name="download" className="w-4 h-4" />}
+                                        {isSupabaseSyncing ? '下载中...' : '从云端下载'}
+                                    </button>
+                                </div>
+
+                                <div className="text-xs text-slate-500 space-y-1 pt-2">
+                                    <p>• 上传到云端：将用户数据上传到 Supabase 数据库</p>
+                                    <p>• 从云端下载：从 Supabase 下载数据并与本地数据智能合并</p>
+                                    <p>• {isUsingDefaultConfig() ? '同步限制：使用默认服务器，每5分钟可执行一次同步' : '无同步限制：使用自定义服务器，可随时同步'}</p>
+                                    <p>• 数据隔离：不同的同步 ID 之间数据完全隔离</p>
+                                </div>
+
+                                <div className="border-t dark:border-slate-700 pt-4 mt-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div>
+                                            <div className="font-medium text-sm">使用自定义 Supabase 服务器</div>
+                                            <div className="text-xs text-slate-500">配置自己的 Supabase 项目，无同步限制</div>
+                                        </div>
+                                        <button
+                                            onClick={() => setShowCustomConfig(!showCustomConfig)}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${showCustomConfig ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
+                                        >
+                                            <span
+                                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showCustomConfig ? 'translate-x-6' : 'translate-x-1'}`}
+                                            />
+                                        </button>
+                                    </div>
+
+                                    {showCustomConfig && (
+                                        <div className="space-y-3 mt-3">
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 mb-1.5 block">Supabase URL</label>
+                                                <input
+                                                    type="text"
+                                                    className="w-full p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-slate-50 dark:bg-slate-800 font-mono"
+                                                    placeholder="https://xxxxx.supabase.co"
+                                                    value={supabaseUrl}
+                                                    onChange={e => setSupabaseUrl(e.target.value)}
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 mb-1.5 block">Supabase Anon Key</label>
+                                                <input
+                                                    type="password"
+                                                    className="w-full p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-slate-50 dark:bg-slate-800 font-mono"
+                                                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                                                    value={supabaseKey}
+                                                    onChange={e => setSupabaseKey(e.target.value)}
+                                                />
+                                            </div>
+
+                                            <div className="text-xs text-slate-500 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg">
+                                                <strong>提示：</strong>需要自己创建 Supabase 项目并执行数据库初始化脚本。
+                                                <a
+                                                    href="https://supabase.com/dashboard"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-blue-600 dark:text-blue-400 hover:underline ml-1"
+                                                >
+                                                    前往 Supabase 控制台
+                                                </a>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </SettingsSection>

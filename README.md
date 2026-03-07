@@ -1,16 +1,89 @@
-# React + Vite
+# A-SOUL 追番表
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+一个受[枝江日程表](https://asoul.love/)启发制作的方便补录播的工具。
 
-Currently, two official plugins are available:
+## 主要功能
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- 📅 日历视图显示直播日程
+- 📺 追番表管理进度
+- 🔄 ICS 日历订阅同步（订阅自枝江日程表）
+- ☁️ **Supabase 云同步**（新功能）
+- 🎨 多成员颜色配置
+- 💾 数据导入导出
+- 🌙 深色模式支持
 
-## React Compiler
+## 新功能：Supabase 云同步
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+现在支持使用 Supabase 数据库在多设备间同步用户数据！
 
-## Expanding the ESLint configuration
+### 主要特点
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- ✅ **开箱即用**：默认服务器，无需配置
+- ✅ 基于同步 ID 的数据隔离
+- ✅ 智能数据合并
+- ✅ 支持自定义服务器（无同步限制）
+- ✅ 数据安全加密传输
+
+### 快速开始
+
+**使用默认服务器（推荐）**
+1. 打开应用设置
+2. 设置一个唯一的同步 ID
+3. 开始同步数据！
+
+**使用自定义服务器（高级）**
+1. 访问 [Supabase 官网](https://supabase.com/) 创建项目
+2. 在 SQL Editor 中执行 `supabase-setup.sql` 脚本创建数据表
+3. 在应用设置中开启 "使用自定义 Supabase 服务器"
+4. 填入你的 URL 和 API Key
+5. 享受无限制同步！
+
+详细使用说明请查看 [开始使用_Supabase同步.md](./开始使用_Supabase同步.md)
+
+## 安装与运行
+
+```bash
+# 安装依赖
+npm install
+
+# 启动开发服务器
+npm run dev
+
+# 构建生产版本
+npm run build
+```
+
+## 技术栈
+
+- React 19
+- Vite 8
+- Tailwind CSS
+- Supabase (云同步)
+
+## 数据同步方案对比
+
+| 特性 | Supabase（默认） | Supabase（自定义） | GitHub Gist |
+|------|-----------------|-------------------|-------------|
+| 配置难度 | 无需配置 | 中等 | 简单 |
+| 同步速度 | 快 | 快 | 较快 |
+| 数据隔离 | 基于同步 ID | 基于同步 ID | 基于 Gist ID |
+| 同步限制 | 5分钟 | 无限制 | 无限制 |
+| 适用场景 | 日常使用 | 频繁同步 | 偶尔备份 |
+| 费用 | 免费 | 免费（有额度） | 免费 |
+
+## 免责声明
+
+本站为粉丝自发搭建的非营利性第三方工具，与A-SOUL、枝江娱乐、乐华娱乐等官方无任何关联。
+
+所有数据来源于 Bilibili 公开动态或用户自行填充，版权归原作者所有。如有侵权，请联系我们删除。
+
+信息可能存在误差，请以官方发布为准。本站不对因信息错误导致的任何损失承担责任。
+
+## 致谢
+
+- 感谢[枝江日程表](https://asoul.love/)的分享与许可
+- 感谢所有贡献者和用户的支持
+
+## License
+
+MIT
