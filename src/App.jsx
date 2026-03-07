@@ -1694,7 +1694,7 @@ function App() {
                                 px-3 py-1.5 ${isSyncing ? 'bg-slate-400' : 'bg-emerald-600 hover:bg-emerald-700'}
                                 text-white rounded-lg text-xs md:text-sm font-bold shadow-md transition-all shrink-0`}>
                                     <Icon name="refresh" className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                                    <span className="hidden sm:inline">{isSyncing ? '同步中...' : '同步订阅'}</span>
+                                    <span className="hidden sm:inline">{isSyncing ? '同步中...' : '同步日历订阅'}</span>
                                 </button>
                                 {view === 'calendar' && (
                                     <button onClick={() => {
@@ -2409,8 +2409,16 @@ function App() {
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-600 dark:text-blue-400 hover:underline ml-1">
-                            Github
+                            项目Github
                         </a>
+                        &nbsp;&nbsp;&nbsp;&nbsp; 所有日程数据均来自枝江站(asoul.love)，感谢
+                        <a href="https://asoul.love/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 dark:text-blue-400 hover:underline ml-1">
+                            枝江站
+                        </a>
+                        &nbsp;的分享与许可！
                     </span>
                 </div>
             </footer>
