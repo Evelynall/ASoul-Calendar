@@ -20,6 +20,7 @@
       "category": "嘉然",
       "dynamicUrl": "https://www.bilibili.com/opus/123456789",
       "liveRoomUrl": "https://live.bilibili.com/22637261",
+      "officialRecordUrl": "https://www.bilibili.com/video/BV1xx411c7mD",
       "isAnime": false
     },
     {
@@ -57,6 +58,7 @@
   - 其他: "其他"
 - `dynamicUrl` (string, 可选): B站动态链接
 - `liveRoomUrl` (string, 可选): 直播间链接
+- `officialRecordUrl` (string, 可选): 官方录播链接
 - `link` (string, 可选): 其他跳转链接
 - `isAnime` (boolean, 可选): 是否为追番日程，默认 false
 
@@ -122,6 +124,7 @@ const baseSchedules = {
     category: s.category,
     dynamicUrl: s.dynamicUrl || '',
     liveRoomUrl: s.liveRoomUrl || '',
+    officialRecordUrl: s.officialRecordUrl || '',
     isAnime: s.isAnime || false
   }))
 };

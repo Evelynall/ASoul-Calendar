@@ -731,6 +731,19 @@ function App() {
                                 onClick={(e) => { e.stopPropagation(); window.open(item.link, '_blank'); }}>
                                 <Icon name="external-link" className="w-3 h-3" />
                             </button>}
+                            {!item.isAnime && item.officialRecordUrl && item.officialRecordUrl.trim() && <button title="观看官方录播"
+                                className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
+                                    e.stopPropagation();
+                                    const a = document.createElement('a');
+                                    a.href = item.officialRecordUrl;
+                                    a.target = '_blank';
+                                    a.rel = 'noopener noreferrer';
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                }}>
+                                <Icon name="bilibili" className="w-3 h-3" />
+                            </button>}
                             {!item.isAnime && item.dynamicUrl && <button title="查看动态"
                                 className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
                                     e.stopPropagation();
@@ -1685,12 +1698,21 @@ function App() {
                 }
             });
 
-            await uploadToSupabase(userData, syncId);
-
             const dataCount = Object.keys(userData).length;
             const dataSizeKB = (new Blob([JSON.stringify(userData)]).size / 1024).toFixed(2);
 
-            alert(`数据已成功上传到 Supabase！\n\n同步 ID: ${syncId}\n用户数据记录：${dataCount} 条\n文件大小：${dataSizeKB} KB`);
+            // 如果使用默认配置，显示大小提示
+            if (isUsingDefaultConfig()) {
+                const sizeWarning = dataSizeKB > 80 ? '\n\n⚠️ 数据接近 100 KB 限制，建议使用自定义 Supabase 服务器' : '';
+                if (!confirm(`准备上传数据到默认云同步服务\n\n用户数据记录：${dataCount} 条\n文件大小：${dataSizeKB} KB / 100 KB${sizeWarning}\n\n是否继续？`)) {
+                    setIsSupabaseSyncing(false);
+                    return;
+                }
+            }
+
+            await uploadToSupabase(userData, syncId);
+
+            alert(`数据已成功上传到 Supabase！\n\n同步 ID: ${syncId}\n用户数据记录：${dataCount} 条\n文件大小：${dataSizeKB} KB${isUsingDefaultConfig() ? ' / 100 KB' : ''}`);
 
             // 更新冷却时间
             setSyncCooldown(300);
@@ -2477,10 +2499,16 @@ function App() {
                             description="使用 Supabase 数据库在多设备间同步用户数据"
                         >
                             <div className="text-xs text-slate-500 mb-3 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg">
-                                <strong>说明：</strong>只同步用户个性化数据（完成状态、备注、用户创建的日程等），不包含基础日程库。使用默认服务器，每5分钟可执行一次同步。使用自定义服务器无同步限制。
+                                <strong>说明：</strong>只同步用户个性化数据（完成状态、备注、用户创建的日程等），不包含基础日程库。
                             </div>
-                            <div className="text-xs text-slate-500 mb-3 p-3 bg-blue-50 dark:bg-blue-200/10 rounded-lg">
-                                <strong>⚠️提示：</strong>请注意！默认同步服务是一个非常简易的公开数据库，我们无法向您保证数据的安全，您的数据很宝贵，如需稳定同步，建议使用自定义的服务器（个人使用免费）⚠️
+                            <div className="text-xs text-slate-500 mb-3 p-3 bg-yellow-50 dark:bg-yellow-900/10 rounded-lg">
+                                <strong>⚠️ 默认云同步限制：</strong>
+                                <ul className="mt-1 space-y-0.5 list-disc list-inside">
+                                    <li>数据大小限制：100 KB（仅支持轻量体验）</li>
+                                    <li>同步频率限制：每 5 分钟可执行一次同步</li>
+                                    <li>数据安全性：公开数据库，无法保证数据安全</li>
+                                </ul>
+                                <div className="mt-2 font-semibold">💡 如需同步更多数据或稳定使用，请使用自定义 Supabase 服务器（个人使用免费，无限制）</div>
                             </div>
                             <div className="space-y-3">
                                 <div>
@@ -2528,7 +2556,7 @@ function App() {
                                 <div className="text-xs text-slate-500 space-y-1 pt-2">
                                     <p>• 上传到云端：将用户数据上传到 Supabase 数据库</p>
                                     <p>• 从云端下载：从 Supabase 下载数据并与本地数据智能合并</p>
-                                    <p>• {isUsingDefaultConfig() ? '同步限制：使用默认服务器，每5分钟可执行一次同步' : '无同步限制：使用自定义服务器，可随时同步'}</p>
+                                    <p>• {isUsingDefaultConfig() ? '默认云同步：100 KB 大小限制，每 5 分钟可同步一次' : '自定义服务器：无大小和频率限制'}</p>
                                     <p>• 数据隔离：不同的同步 ID 之间数据完全隔离</p>
                                 </div>
 
@@ -2536,7 +2564,7 @@ function App() {
                                     <div className="flex items-center justify-between mb-3">
                                         <div>
                                             <div className="font-medium text-sm">使用自定义 Supabase 服务器</div>
-                                            <div className="text-xs text-slate-500">配置自己的 Supabase 项目，无同步限制</div>
+                                            <div className="text-xs text-slate-500">配置自己的 Supabase 项目，无大小和频率限制</div>
                                         </div>
                                         <button
                                             onClick={() => setShowCustomConfig(!showCustomConfig)}

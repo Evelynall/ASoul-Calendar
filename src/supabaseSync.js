@@ -3,6 +3,7 @@ import { createSupabaseClient, isUsingDefaultConfig } from './supabaseClient';
 const SYNC_ID_KEY = 'asoul_sync_id';
 const LAST_SYNC_TIME_KEY = 'asoul_last_sync_time';
 const SYNC_COOLDOWN = 5 * 60 * 1000; // 5分钟
+const DEFAULT_SYNC_SIZE_LIMIT = 100 * 1024; // 默认云同步100KB限制
 
 // 获取同步 ID
 export const getSyncId = () => {
@@ -72,6 +73,15 @@ export const uploadToSupabase = async (userData, syncId) => {
         const minutes = Math.floor(remainingSeconds / 60);
         const seconds = remainingSeconds % 60;
         throw new Error(`请等待 ${minutes}分${seconds}秒 后再同步`);
+    }
+
+    // 检查数据大小（仅默认配置有限制）
+    if (isUsingDefaultConfig()) {
+        const dataSize = new Blob([JSON.stringify(userData)]).size;
+        if (dataSize > DEFAULT_SYNC_SIZE_LIMIT) {
+            const dataSizeKB = (dataSize / 1024).toFixed(2);
+            throw new Error(`数据大小 ${dataSizeKB} KB 超过默认云同步限制（100 KB）。\n\n默认云同步仅支持轻量体验，如需同步更多数据请使用自定义 Supabase 服务器。`);
+        }
     }
 
     const dataToUpload = {
