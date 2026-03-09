@@ -1,344 +1,59 @@
-﻿import { useState, useMemo, useEffect, Fragment, useRef } from 'react';
+﻿import { useState, useMemo, useEffect, useRef } from 'react';
 import './App.css';
 import { getSupabaseConfig, saveSupabaseConfig, isUsingDefaultConfig } from './supabaseClient';
 import { getSyncId, saveSyncId, uploadToSupabase, downloadFromSupabase, canSync, getTimeUntilNextSync } from './supabaseSync';
 import { saveToIndexedDB, loadFromIndexedDB, deleteDatabase } from './indexedDBStorage';
 import FirstTimeNotice from './FirstTimeNotice';
-const STORAGE_KEY = 'asoul_calendar_data';
-const USER_DATA_KEY = 'asoul_user_data'; // 用户个性化数据（完成状态、备注等）
-const BASE_SCHEDULES_KEY = 'asoul_base_schedules'; // 基础日程库缓存
-const BASE_SCHEDULES_VERSION_KEY = 'asoul_base_schedules_version'; // 基础日程库版本号
-const BASE_SCHEDULES_LAST_FETCH_KEY = 'asoul_base_schedules_last_fetch'; // 最后获取时间
-const THEME_KEY = 'asoul_calendar_theme';
-const ICS_CONFIG_KEY = 'asoul_ics_urls';
-const DISPLAY_MODE_KEY = 'asoul_display_mode';
-const SPECIAL_GROUP_COLOR_KEY = 'asoul_special_group_color';
-const ANIME_VIEW_KEY = 'asoul_anime_view';
-const GIST_TOKEN_KEY = 'asoul_gist_token';
-const GIST_ID_KEY = 'asoul_gist_id';
-const CUSTOM_COLORS_KEY = 'asoul_custom_colors';
-
-// 基础日程库的 GitHub 地址（你需要替换为实际地址）
-const BASE_SCHEDULES_URL = 'https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json';
-
-// 添加时间戳参数以绕过CDN缓存
-const getBaseSchedulesUrl = () => {
-    return `${BASE_SCHEDULES_URL}?t=${Date.now()}`;
-};
-
-// 检查是否需要重新获取基础日程（2小时限制）
-const shouldFetchBaseSchedules = () => {
-    const lastFetch = localStorage.getItem(BASE_SCHEDULES_LAST_FETCH_KEY);
-    const cachedSchedules = localStorage.getItem(BASE_SCHEDULES_KEY);
-
-    // 如果没有缓存数据，立即获取
-    if (!cachedSchedules) {
-        return true;
-    }
-
-    // 如果没有记录最后获取时间，立即获取
-    if (!lastFetch) {
-        return true;
-    }
-
-    // 检查是否超过2小时（7200000毫秒）
-    const now = Date.now();
-    const lastFetchTime = parseInt(lastFetch, 10);
-    const twoHours = 2 * 60 * 60 * 1000;
-
-    return (now - lastFetchTime) >= twoHours;
-};
-
-const DEFAULT_MEMBER_CONFIG = {
-    '贝拉': { color: '#DB7D74', textColor: '#FFFFFF' },
-    '嘉然': { color: '#E799B0', textColor: '#FFFFFF' },
-    '乃琳': { color: '#576690', textColor: '#FFFFFF' },
-    '思诺': { color: '#7252C0', textColor: '#FFFFFF' },
-    '心宜': { color: '#C93773', textColor: '#FFFFFF' },
-    'A-SOUL': { color: '#55ACEE', textColor: '#FFFFFF' },
-    '小心思': { color: '#4CADAF', textColor: '#FFFFFF' },
-    '其他': { color: '#94a3b8', textColor: '#FFFFFF' }
-};
-
-// 获取成员配置（支持自定义颜色）
-const getMemberConfigColors = () => {
-    const saved = localStorage.getItem(CUSTOM_COLORS_KEY);
-    if (saved) {
-        try {
-            const customColors = JSON.parse(saved);
-            return { ...DEFAULT_MEMBER_CONFIG, ...customColors };
-        } catch (e) {
-            return DEFAULT_MEMBER_CONFIG;
-        }
-    }
-    return DEFAULT_MEMBER_CONFIG;
-};
+import Icon from './components/Icon';
+import SettingsSection from './components/SettingsSection';
+import ScheduleCard from './components/ScheduleCard';
+import { parseICS, syncIcsCalendars } from './services/icsParser';
+import {
+    extractUserData,
+    uploadToGist,
+    downloadFromGist,
+    mergeUserData,
+    reloadSchedules
+} from './services/gistSync';
+import {
+    extractUserDataForExport,
+    importUserData,
+    mergeImportedUserData,
+    reloadSchedulesFromUserData,
+    exportUserCreatedSchedules,
+    exportCleanedSchedules,
+    clearUserData
+} from './services/dataManager';
+import {
+    STORAGE_KEY,
+    USER_DATA_KEY,
+    BASE_SCHEDULES_KEY,
+    BASE_SCHEDULES_VERSION_KEY,
+    BASE_SCHEDULES_LAST_FETCH_KEY,
+    THEME_KEY,
+    ICS_CONFIG_KEY,
+    DISPLAY_MODE_KEY,
+    SPECIAL_GROUP_COLOR_KEY,
+    ANIME_VIEW_KEY,
+    GIST_TOKEN_KEY,
+    GIST_ID_KEY,
+    CUSTOM_COLORS_KEY,
+    BASE_SCHEDULES_URL,
+    DEFAULT_MEMBER_CONFIG,
+    LIVE_ROOM_URLS
+} from './constants';
+import {
+    getBaseSchedulesUrl,
+    shouldFetchBaseSchedules,
+    getMemberConfigColors,
+    getMemberByLiveRoomUrl,
+    getMemberConfig,
+    formatDateString,
+    toZeroDate,
+    extractUrlFromText
+} from './utils';
 
 const MEMBER_CONFIG = getMemberConfigColors();
-
-// 获取成员配置（支持多成员组合、直播间地址反向匹配和特殊组合颜色开关）
-const getMemberConfig = (category, displayMode = 'single', liveRoomUrl = null) => {
-    const useSpecialGroupColor = localStorage.getItem(SPECIAL_GROUP_COLOR_KEY) !== 'false';
-    const memberConfig = getMemberConfigColors(); // 获取最新的配置（包括自定义颜色）
-
-    // 优先根据直播间URL确定主要成员
-    let primaryMember = null;
-    if (liveRoomUrl) {
-        primaryMember = getMemberByLiveRoomUrl(liveRoomUrl);
-    }
-
-    // 如果是已知的组合，根据特殊组合颜色开关决定处理方式
-    if (memberConfig[category]) {
-        // 如果开启特殊组合颜色，直接返回配置
-        if (useSpecialGroupColor) {
-            const config = { ...memberConfig[category] };
-            // 如果存在直播间URL对应的成员，且是多成员组合，优先使用直播间成员的颜色
-            if (primaryMember && category.includes('+') && displayMode === 'multi-color') {
-                config.color = memberConfig[primaryMember]?.color || config.color;
-                if (config.multiColors && config.multiColors.length > 1) {
-                    // 确保直播间成员的颜色在渐变色中排在第一位
-                    const primaryColor = memberConfig[primaryMember]?.color;
-                    if (primaryColor && config.multiColors.includes(primaryColor)) {
-                        const filteredColors = config.multiColors.filter(c => c !== primaryColor);
-                        config.multiColors = [primaryColor, ...filteredColors];
-                    }
-                }
-            }
-            return config;
-        } else {
-            // 如果关闭特殊组合颜色，将特殊组合转换为多成员组合处理
-            if (category === 'A-SOUL') {
-                category = '贝拉+嘉然+乃琳';
-            } else if (category === '小心思') {
-                category = '心宜+思诺';
-            }
-            // 其他组合保持不变
-        }
-    }
-
-    // 处理多成员组合（如"贝拉等"）
-    if (category.endsWith('等')) {
-        const mainMember = category.replace('等', '');
-        if (memberConfig[mainMember]) {
-            // 使用主要成员的颜色，但文本表示为组合
-            return {
-                ...memberConfig[mainMember],
-                isMultiMember: true
-            };
-        }
-    }
-
-    // 处理多成员组合（如"贝拉+嘉然"）
-    if (category.includes('+')) {
-        const members = category.split('+').map(m => m.trim()).filter(m => m);
-
-        // 如果有直播间URL对应的成员，确保该成员排在前面
-        if (primaryMember && members.includes(primaryMember)) {
-            const sortedMembers = [primaryMember, ...members.filter(m => m !== primaryMember)];
-            members.splice(0, members.length, ...sortedMembers);
-        }
-
-        const memberColors = members.map(member => {
-            if (memberConfig[member]) {
-                return memberConfig[member].color;
-            }
-            return memberConfig['其他'].color;
-        }).filter(color => color !== memberConfig['其他'].color);
-
-        if (memberColors.length > 0) {
-            if (displayMode === 'multi-color') {
-                // 多色模式：返回渐变色配置
-                return {
-                    color: memberColors[0], // 主颜色（直播间成员优先）
-                    textColor: '#FFFFFF',
-                    isMultiMember: true,
-                    multiColors: memberColors.slice(0, 5) // 最多5个成员颜色
-                };
-            } else {
-                // 单一颜色模式：优先使用直播间成员的颜色，否则使用第一个成员的颜色
-                const targetMember = primaryMember || members.find(member => memberConfig[member]);
-                if (targetMember) {
-                    return {
-                        ...memberConfig[targetMember],
-                        isMultiMember: true
-                    };
-                }
-            }
-        }
-    }
-
-    // 如果有直播间URL对应的成员，使用该成员的颜色
-    if (primaryMember && memberConfig[primaryMember]) {
-        return memberConfig[primaryMember];
-    }
-
-    // 默认返回其他配置
-    return memberConfig['其他'];
-};
-
-const LIVE_ROOM_URLS = {
-    '贝拉': 'https://live.bilibili.com/22632424',
-    '乃琳': 'https://live.bilibili.com/22625027',
-    '嘉然': 'https://live.bilibili.com/22637261',
-    '心宜': 'https://live.bilibili.com/30849777',
-    '思诺': 'https://live.bilibili.com/30858592',
-    'A-SOUL': 'https://live.bilibili.com/22632424', // A-SOUL官方直播间
-    '小心思': 'https://live.bilibili.com/30849777' // 小心思官方直播间
-};
-
-// 根据直播间URL反向查找成员
-const getMemberByLiveRoomUrl = (liveRoomUrl) => {
-    if (!liveRoomUrl) return null;
-    for (const [member, url] of Object.entries(LIVE_ROOM_URLS)) {
-        if (liveRoomUrl.includes(url.replace('https://live.bilibili.com/', ''))) {
-            return member;
-        }
-    }
-    return null;
-};
-
-const formatDateString = (date) => {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}/${m}/${d}`;
-};
-
-const toZeroDate = (val) => {
-    const d = val ? new Date(typeof val === 'string' ? val.replace(/-/g, '/') : val) : new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-};
-
-const Icon = ({ name, className = "w-4 h-4" }) => {
-    const icons = {
-        calendar:
-            <path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />,
-        settings: (
-            <Fragment>
-                <path
-                    d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z" />
-                <circle cx="12" cy="12" r="3" />
-            </Fragment>
-        ),
-        palette: (
-            <Fragment>
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74" />
-                <path d="M12 22a7 7 0 0 0 7-7c0-2.38-1.19-4.47-3-5.74" />
-            </Fragment>
-        ),
-        x:
-            <path d="M18 6 6 18M6 6l12 12" />,
-        moon:
-            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />,
-        sun: (
-            <Fragment>
-                <circle cx="12" cy="12" r="4" />
-                <path
-                    d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-            </Fragment>
-        ),
-        "chevron-left":
-            <path d="m15 18-6-6 6-6" />,
-        "chevron-right":
-            <path d="m9 18 6-6-6-6" />,
-        "check-circle-2": (
-            <Fragment>
-                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
-                <path d="m9 12 2 2 4-4" />
-            </Fragment>
-        ),
-        "message-square":
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
-        plus:
-            <path d="M5 12h14M12 5v14" />,
-        refresh:
-            <path
-                d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8m0 0V3m0 5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16m0 0v5m0-5h5" />
-        ,
-        download:
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />,
-        upload:
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />,
-        "trash-2": (
-            <Fragment>
-                <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />
-            </Fragment>
-        ),
-        search: (
-            <Fragment>
-                <circle cx="11" cy="11" r="8" />
-                <path d="m21 21-4.3-4.3" />
-            </Fragment>
-        ),
-        "calendar-days": (
-            <Fragment>
-                <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
-                <line x1="16" x2="16" y1="2" y2="6" />
-                <line x1="8" x2="8" y1="2" y2="6" />
-                <line x1="3" x2="21" y1="10" y2="10" />
-                <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" />
-            </Fragment>
-        ),
-        bilibili: (
-            <Fragment>
-                <path d="M12 3L9 1M12 3l3-2" />
-                <rect x="3" y="6" width="18" height="14" rx="3" />
-                <path d="M8 12c.5 0 1 .5 1 1s-.5 1-1 1-1-.5-1-1 .5-1 1-1zm8 0c.5 0 1 .5 1 1s-.5 1-1 1-1-.5-1-1 .5-1 1-1z" />
-                <path d="M9 17h6" />
-            </Fragment>
-        ),
-        link:
-            <path
-                d="M 13 12 L 13 3 C 20 3 20 12 13 12 L 22 12 C 22 19 13 19 13 12 L 13 21 C 6 21 6 12 13 12 L 4 12 C 4 5 13 5 13 12" />
-        ,
-        "external-link":
-            <path
-                d="m 4 18 C 4 14 5 9 11 9 L 11 6 C 11 4 12 4 19 10 C 20 11 20 11 19 12 C 12 19 11 19 11 17 L 11 14 C 9 14 6 14 4 18" />
-        ,
-        star:
-            <path d="m 5 21 C 13 17 9 17 17 21 C 16 12 15 15 20 10 C 12 9 15 11 11 3 C 7 11 10 9 2 10 C 7 15 6 12 5 21" />
-    };
-    return (
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-            strokeLinecap="round" strokeLinejoin="round" className={className}>
-            {icons[name] || null}
-        </svg>
-    );
-};
-
-const SettingsSection = ({ title, icon, iconColor, description, children }) => {
-    const [isOpen, setIsOpen] = useState(false);
-
-    return (
-        <section className="rounded-2xl bg-white dark:bg-slate-900 border dark:border-slate-800 shadow-sm overflow-hidden">
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="w-full p-6 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-            >
-                <div className="flex items-center gap-3">
-                    <Icon name={icon} className={`w-5 h-5 ${iconColor}`} />
-                    <div className="text-left">
-                        <h3 className="font-bold text-lg">{title}</h3>
-                        {description && (
-                            <p className="text-xs text-slate-500 mt-0.5">{description}</p>
-                        )}
-                    </div>
-                </div>
-                <Icon
-                    name="chevron-right"
-                    className={`w-5 h-5 text-slate-400 transition-transform ${isOpen ? 'rotate-90' : ''}`}
-                />
-            </button>
-            {isOpen && (
-                <div className="px-6 pb-6">
-                    {children}
-                </div>
-            )}
-        </section>
-    );
-};
 
 function App() {
     const [schedules, setSchedules] = useState([]);
@@ -699,155 +414,6 @@ function App() {
         }
     };
 
-    const ScheduleCard = ({ item, showDate = false, showMoveButton = false }) => {
-        const displayMode = localStorage.getItem(DISPLAY_MODE_KEY) || 'multi-color';
-        // 获取直播间URL（优先级：ICS直播间URL > 预定义直播间URL）
-        const liveRoomUrl = item.liveRoomUrl || LIVE_ROOM_URLS[item.category];
-        const config = getMemberConfig(item.category, displayMode, liveRoomUrl);
-
-        // 生成渐变背景样式
-        const getBackgroundStyle = () => {
-            if (displayMode === 'multi-color' && config.multiColors && config.multiColors.length > 1) {
-                const colors = config.multiColors;
-                const gradientStops = colors.map((color, index) => `${color} ${(index / (colors.length - 1)) * 100}%`).join(', ');
-                return {
-                    background: `linear-gradient(135deg, ${gradientStops})`,
-                    color: config.textColor
-                };
-            }
-            return {
-                backgroundColor: config.color,
-                color: config.textColor
-            };
-        };
-
-        return (
-            <div className="flex flex-col gap-1 px-1 mb-4">
-                <div className="flex justify-between items-baseline px-0.5">
-                    <div className="text-[10px] font-black italic tracking-tighter opacity-60 text-slate-500 dark:text-slate-400">
-                        {item.isAnime ? (
-                            item.isFavorite ? (
-                                <span className="text-yellow-500">收藏日程</span>
-                            ) : (
-                                <span className="text-orange-500">追番日程</span>
-                            )
-                        ) : (
-                            showDate ? `${item.date.split('/').slice(1).join('/')} ${item.time}` : item.time
-                        )}
-                    </div>
-                </div>
-                <div className={`group relative p-3 rounded-xl transition-all shadow-sm ${item.completed ? 'opacity-30 grayscale'
-                    : 'hover:shadow-md hover:scale-[1.01]'} cursor-pointer`} style={getBackgroundStyle()} onClick={() =>
-                        toggleComplete(item.id)}>
-                    <div className="flex items-center gap-1.5 mb-1">
-                        <span
-                            className="px-1.5 py-0.5 rounded text-[9px] font-black bg-black/10 uppercase tracking-tighter">{item.type}</span>
-                        <div className="text-[11px] font-bold opacity-80 truncate pr-4">{item.subTitle}</div>
-                    </div>
-                    <div className="text-xs md:text-sm font-black leading-tight line-clamp-2">{item.title}</div>
-
-                    {item.note && <div className="mt-2 p-1.5 rounded text-[10px] bg-black/5 flex items-start gap-1">
-                        <Icon name="message-square" className="w-2.5 h-2.5 mt-0.5" /><span
-                            className="italic opacity-90">{item.note}</span>
-                    </div>}
-
-
-
-                    <div className="absolute top-1 right-1 flex items-center gap-0.5">
-                        {item.completed &&
-                            <Icon name="check-circle-2" className="w-3.5 h-3.5 text-green-400" />}
-                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {!item.isAnime && (() => {
-                                // 优先级：ICS直播间URL > 预定义直播间URL
-                                const liveRoomUrl = item.liveRoomUrl || LIVE_ROOM_URLS[item.category];
-
-                                // 判断日程日期是否为今天或未来
-                                const scheduleDate = toZeroDate(item.date);
-                                const today = toZeroDate();
-                                const isFutureOrToday = scheduleDate >= today;
-
-                                return liveRoomUrl && isFutureOrToday && (
-                                    <button title="进入直播间" className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
-                                        e.stopPropagation(); window.open(liveRoomUrl, '_blank');
-                                    }}>
-                                        <Icon name="bilibili" className="w-3 h-3" />
-                                    </button>
-                                );
-                            })()}
-                            {item.link && <button title="跳转链接" className="p-1 bg-black/5 hover:bg-black/10 rounded-full"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    // 检查链接是否为 bilibili.com 域名
-                                    const isBilibili = item.link.includes('bilibili.com');
-                                    if (!isBilibili) {
-                                        setExternalLinkModal({ isOpen: true, url: item.link });
-                                    } else {
-                                        window.open(item.link, '_blank');
-                                    }
-                                }}>
-                                <Icon name="external-link" className="w-3 h-3" />
-                            </button>}
-                            {!item.isAnime && item.officialRecordUrl && item.officialRecordUrl.trim() && <button title="观看官方录播"
-                                className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
-                                    e.stopPropagation();
-                                    const a = document.createElement('a');
-                                    a.href = item.officialRecordUrl;
-                                    a.target = '_blank';
-                                    a.rel = 'noopener noreferrer';
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    document.body.removeChild(a);
-                                }}>
-                                <Icon name="bilibili" className="w-3 h-3" />
-                            </button>}
-                            {!item.isAnime && item.dynamicUrl && <button title="查看动态"
-                                className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
-                                    e.stopPropagation();
-                                    window.open(item.dynamicUrl, '_blank');
-                                }}>
-                                <Icon name="link" className="w-3 h-3" />
-                            </button>}
-                            {!item.isAnime && (() => {
-                                // 判断日程日期是否为今天或过去
-                                const scheduleDate = toZeroDate(item.date);
-                                const today = toZeroDate();
-                                const isPastOrToday = scheduleDate <= today; return isPastOrToday && (<button title="在B站搜索"
-                                    className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleBilibiliSearch(item);
-                                    }}>
-                                    <Icon name="search" className="w-3 h-3" />
-                                </button>
-                                );
-                            })()}
-                            {(!item.isAnime || item.isFavorite) && (
-                                <button title={item.isFavorite ? "取消收藏" : "收藏到追番表"} className={`p-1 rounded-full ${item.isFavorite
-                                    ? 'bg-yellow-500 text-white' : 'bg-black/5 hover:bg-black/10'}`} onClick={(e) => {
-                                        e.stopPropagation(); toggleFavorite(item.id);
-                                    }}
-                                >
-                                    <Icon name="star" className="w-3 h-3" />
-                                </button>
-                            )}
-                            <button title="编辑备注" className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
-                                e.stopPropagation(); setEditingNoteId(item.id); setTempNote(item.note || '');
-                                setTempLink(item.link || '');
-                            }}>
-                                <Icon name="message-square" className="w-3 h-3" />
-                            </button>
-                            <button title="删除日程" className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
-                                e.stopPropagation(); if (confirm('确定删除吗？')) setSchedules(prev => prev.filter(s => s.id !==
-                                    item.id));
-                            }}>
-                                <Icon name="trash-2" className="w-3 h-3" />
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
     const toggleComplete = (id) => {
         setSchedules(prev => prev.map(s => s.id === id ? { ...s, completed: !s.completed } : s));
     };
@@ -870,35 +436,6 @@ function App() {
             }
             return s;
         }));
-    };
-
-    // 从文本中提取URL链接
-    const extractUrlFromText = (text) => {
-        if (!text) return '';
-
-        // 匹配常见的URL模式
-        const urlRegex = /(https?:\/\/[^\s]+)/gi;
-        const matches = text.match(urlRegex);
-
-        if (matches && matches.length > 0) {
-            // 返回第一个找到的URL
-            return matches[0];
-        }
-
-        // 如果没有找到标准URL，尝试匹配简化的链接格式
-        const simplifiedRegex = /(www\.[^\s]+\.[a-z]{2,})|([a-z]+\.[a-z]{2,}(\/[^\s]*)?)/gi;
-        const simplifiedMatches = text.match(simplifiedRegex);
-
-        if (simplifiedMatches && simplifiedMatches.length > 0) {
-            const url = simplifiedMatches[0];
-            // 如果没有协议头，添加https://
-            if (!url.startsWith('http')) {
-                return 'https://' + url;
-            }
-            return url;
-        }
-
-        return '';
     };
 
     const saveNote = (id) => {
@@ -957,186 +494,6 @@ function App() {
         setView(newSchedule.isAnime ? 'anime' : 'calendar');
     };
 
-    // ICS 解析核心逻辑
-    const parseICS = (icsText) => {
-        // 1. Unfold: 处理折行 (根据 RFC 5545, 换行+空格/制表符表示续行)
-        const unfoldedText = icsText.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
-        const lines = unfoldedText.split(/\r?\n/);
-        const events = [];
-        let currentEvent = null;
-
-        const getVal = (line) => {
-            const parts = line.split(':');
-            return parts.slice(1).join(':').trim();
-        };
-
-        lines.forEach(line => {
-            if (line.startsWith('BEGIN:VEVENT')) {
-                currentEvent = {};
-            } else if (line.startsWith('END:VEVENT')) {
-                if (currentEvent) events.push(currentEvent);
-                currentEvent = null;
-            } else if (currentEvent) {
-                if (line.startsWith('SUMMARY')) currentEvent.summary = getVal(line);
-                else if (line.startsWith('DTSTART')) currentEvent.dtstart = getVal(line);
-                else if (line.startsWith('DTEND')) currentEvent.dtend = getVal(line);
-                else if (line.startsWith('DESCRIPTION')) currentEvent.description = getVal(line).replace(/\\n/g, '\n');
-                else if (line.startsWith('UID')) currentEvent.uid = getVal(line);
-                else if (line.startsWith('URL')) currentEvent.url = getVal(line);
-            }
-        });
-
-        return events.map(ev => {
-            // 解析日期时间（带时区处理）
-            let date = '', time = '';
-            if (ev.dtstart) {
-                // 处理带时区的DTSTART（格式：20231225T103000Z 或 20231225T103000+0800）
-                const tzMatch = ev.dtstart.match(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z|[+-]\d{4})?/);
-                if (tzMatch) {
-                    const [, year, month, day, hour, minute, second, timezone] = tzMatch;
-
-                    // 创建日期对象
-                    let eventDate = new Date(year, month - 1, day, hour, minute, second || 0);
-
-                    // 处理UTC时间（Z结尾）
-                    if (timezone === 'Z') {
-                        // UTC时间需要转换为本地时间
-                        const utcTime = Date.UTC(year, month - 1, day, hour, minute, second || 0);
-                        eventDate = new Date(utcTime);
-                    }
-                    // 处理带时区偏移的时间（+0800, -0500等）
-                    else if (timezone && timezone.match(/[+-]\d{4}/)) {
-                        const offsetHours = parseInt(timezone.substring(1, 3));
-                        const offsetMinutes = parseInt(timezone.substring(3, 5));
-                        const totalOffsetMinutes = (timezone[0] === '+' ? 1 : -1) * (offsetHours * 60 + offsetMinutes);
-                        eventDate = new Date(eventDate.getTime() - totalOffsetMinutes * 60000);
-                    }
-
-                    date = `${eventDate.getFullYear()}/${String(eventDate.getMonth() + 1).padStart(2,
-                        '0')}/${String(eventDate.getDate()).padStart(2, '0')}`;
-                    time = `${String(eventDate.getHours()).padStart(2, '0')}:${String(eventDate.getMinutes()).padStart(2, '0')}`;
-                } else {
-                    // 处理只有日期的情况（全天事件）
-                    const dm = ev.dtstart.match(/(\d{4})(\d{2})(\d{2})/);
-                    if (dm) {
-                        date = `${dm[1]}/${dm[2]}/${dm[3]}`;
-                        time = '00:00';
-                    }
-                }
-            }
-
-            // 从 DESCRIPTION 提取信息
-            // 格式要求: "tag | 成员动态：链接"
-            let type = '订阅';
-            let dynamicUrl = '';
-            let liveRoomUrl = ''; // 专门用于直播间跳转的URL
-
-            if (ev.description) {
-                const desc = ev.description;
-                // 提取 Tag
-                const tagMatch = desc.match(/^([^|]+)\|/);
-                if (tagMatch) type = tagMatch[1].trim();
-
-                // 提取链接 (寻找 bilibili.com 相关的链接)
-                const urlMatch = desc.match(/https?:\/\/www\.bilibili\.com\/[^\s\n]+/);
-                if (urlMatch) dynamicUrl = urlMatch[0];
-            }
-
-            // 从 URL 标签提取直播间链接（如果存在）
-            let icsUrl = null;
-            if (ev.url) {
-                // 如果URL是直播间链接，用于直播间跳转
-                liveRoomUrl = ev.url;
-                icsUrl = ev.url; // 保存原始ICS URL
-            }
-
-            // 解析 SUMMARY 字段
-            let summary = ev.summary || '无标题';
-            // 移除【节目】等tag部分
-            summary = summary.replace(/^【[^】]+】/, '').trim();
-            // 分割副标题和主标题（同时支持全角和半角冒号）
-            let subTitle = '';
-            let title = summary;
-            // 查找冒号位置（支持全角：和半角:）
-            const colonIndex = summary.indexOf('：') !== -1 ? summary.indexOf('：') : summary.indexOf(':');
-            if (colonIndex !== -1) {
-                subTitle = summary.substring(0, colonIndex).trim();
-                title = summary.substring(colonIndex + 1).trim();
-            } else {
-                // 如果没有冒号，副标题和主标题一致
-                subTitle = title;
-            }
-
-            // 识别成员 - 支持多成员组合判断
-            let category = '其他';
-            const fullText = (ev.summary + (ev.description || '')).toLowerCase();
-
-            // 检查特殊组合
-            const has贝拉 = fullText.includes('贝拉');
-            const has嘉然 = fullText.includes('嘉然');
-            const has乃琳 = fullText.includes('乃琳');
-            const has心宜 = fullText.includes('心宜');
-            const has思诺 = fullText.includes('思诺');
-
-            // 贝拉+嘉然+乃琳组合 -> A-SOUL
-            if (has贝拉 && has嘉然 && has乃琳) {
-                category = 'A-SOUL';
-            }
-            // 心宜+思诺组合 -> 小心思
-            else if (has心宜 && has思诺) {
-                category = '小心思';
-            }
-            // 多成员组合识别（2-5个成员）
-            else {
-                const foundMembers = [];
-                const memberNames = Object.keys(MEMBER_CONFIG).filter(name => name !== 'A-SOUL' && name !== '小心思' && name !== '其他');
-
-                for (const name of memberNames) {
-                    if (fullText.includes(name.toLowerCase())) {
-                        foundMembers.push(name);
-                    }
-                }
-
-                if (foundMembers.length >= 2 && foundMembers.length <= 5) {
-                    // 按优先级排序：直播间成员排在前面
-                    const liveRoomPriority = ['贝拉', '嘉然', '乃琳', '心宜', '思诺'];
-                    foundMembers.sort((a, b) => {
-                        const aIndex = liveRoomPriority.indexOf(a);
-                        const bIndex = liveRoomPriority.indexOf(b);
-                        if (aIndex === -1 && bIndex === -1) return 0;
-                        if (aIndex === -1) return 1;
-                        if (bIndex === -1) return -1;
-                        return aIndex - bIndex;
-                    });
-                    category = foundMembers.join('+');
-                }
-                // 单个成员识别
-                else if (foundMembers.length === 1) {
-                    category = foundMembers[0];
-                }
-            }
-
-            // 备用检查
-            if (category === '其他' && fullText.includes('有点宜思')) category = '小心思';
-
-            return {
-                id: ev.uid || `ics-${date}-${time}-${ev.summary}`,
-                date,
-                time,
-                title,
-                type,
-                subTitle,
-                category,
-                dynamicUrl,
-                liveRoomUrl: liveRoomUrl || '', // 直播间专用URL
-                icsUrl: icsUrl || ev.url, // 保存原始ICS URL
-                completed: false,
-                note: '',
-                isIcs: true
-            };
-        }).filter(ev => ev.date); // 过滤无效项
-    };
-
     const handleSyncIcs = async () => {
         if (!icsUrls || !icsUrls.trim()) {
             alert('请先在设置中配置 ICS 订阅链接');
@@ -1144,29 +501,9 @@ function App() {
             return;
         }
         setIsSyncing(true);
-        const urls = icsUrls.split('\n').filter(u => u.trim().startsWith('http'));
-        let totalAdded = 0;
 
         try {
-            const existingIds = new Set(schedules.map(s => s.id));
-            const newItems = [];
-
-            for (const url of urls) {
-                // 使用 corsproxy.io 代理解决跨域
-                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url.trim())}`;
-                const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error(`无法获取日历: ${url}`);
-                const text = await response.text();
-                const parsed = parseICS(text);
-
-                parsed.forEach(item => {
-                    if (!existingIds.has(item.id)) {
-                        newItems.push(item);
-                        existingIds.add(item.id);
-                        totalAdded++;
-                    }
-                });
-            }
+            const { newItems, totalAdded } = await syncIcsCalendars(icsUrls, schedules);
 
             if (newItems.length > 0) {
                 setSchedules(prev => [...prev, ...newItems]);
@@ -1402,83 +739,14 @@ function App() {
 
         setIsGistSyncing(true);
         try {
-            // 提取用户数据
-            const userData = {};
+            const userData = extractUserData(schedules);
+            const result = await uploadToGist(gistToken, gistId, userData);
 
-            schedules.forEach(schedule => {
-                if (schedule.isUserCreated) {
-                    // 用户创建的日程，保存完整数据
-                    userData[schedule.id] = { ...schedule, isUserCreated: true };
-                } else if (schedule.isBaseSchedule) {
-                    // 基础日程，只保存用户修改的部分
-                    const userModifications = {};
-                    if (schedule.completed) userModifications.completed = true;
-                    if (schedule.note) userModifications.note = schedule.note;
-                    // 保存用户自定义的链接（排除系统自带的链接）
-                    if (schedule.link && schedule.link.trim()) {
-                        const isSystemLink = schedule.link === schedule.liveRoomUrl ||
-                            schedule.link === schedule.dynamicUrl ||
-                            schedule.link === schedule.icsUrl;
-                        if (!isSystemLink) {
-                            userModifications.link = schedule.link;
-                        }
-                    }
-                    if (schedule.isFavorite) userModifications.isFavorite = true;
-                    if (schedule.isAnime) userModifications.isAnime = true;
-
-                    if (Object.keys(userModifications).length > 0) {
-                        userData[schedule.id] = userModifications;
-                    }
-                }
-            });
-
-            const userDataJson = JSON.stringify(userData, null, 2);
-            const fileSizeKB = (new Blob([userDataJson]).size / 1024).toFixed(2);
-
-            const data = {
-                description: 'A-SOUL 追番表用户数据备份',
-                public: false,
-                files: {
-                    'asoul-user-data.json': {
-                        content: userDataJson
-                    }
-                }
-            };
-
-            let response;
-            if (gistId) {
-                // 更新现有 Gist
-                response = await fetch(`https://api.github.com/gists/${gistId}`, {
-                    method: 'PATCH',
-                    headers: {
-                        'Authorization': `token ${gistToken}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(data)
-                });
-            } else {
-                // 创建新 Gist
-                response = await fetch('https://api.github.com/gists', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `token ${gistToken}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(data)
-                });
-            }
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || '同步失败');
-            }
-
-            const result = await response.json();
             if (!gistId) {
-                setGistId(result.id);
+                setGistId(result.gistId);
             }
 
-            alert(`数据已成功同步到 GitHub Gist！\n\n同步的数据：\n- 用户数据记录：${Object.keys(userData).length} 条\n- 文件大小：${fileSizeKB} KB`);
+            alert(`数据已成功同步到 GitHub Gist！\n\n同步的数据：\n- 用户数据记录：${result.dataCount} 条\n- 文件大小：${result.fileSizeKB} KB`);
         } catch (err) {
             console.error('Gist 同步错误:', err);
             alert('同步失败：' + err.message);
@@ -1495,120 +763,13 @@ function App() {
 
         setIsGistSyncing(true);
         try {
-            const response = await fetch(`https://api.github.com/gists/${gistId}`, {
-                headers: {
-                    'Authorization': `token ${gistToken}`,
-                }
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || '读取失败');
-            }
-
-            const gist = await response.json();
-            const file = gist.files['asoul-user-data.json'] || gist.files['asoul-calendar-data.json'];
-
-            if (!file) {
-                throw new Error('Gist 中未找到数据文件');
-            }
-
-            const fileSizeKB = (file.size / 1024).toFixed(2);
-            const gistData = JSON.parse(file.content);
-
-            // 检查是否是新格式（用户数据对象）还是旧格式（完整数组）
-            let userData = {};
-
-            if (Array.isArray(gistData)) {
-                // 旧格式：完整日程数组，需要转换
-                alert('检测到旧格式数据，正在转换...');
-                gistData.forEach(schedule => {
-                    if (schedule.isUserCreated) {
-                        userData[schedule.id] = { ...schedule, isUserCreated: true };
-                    } else {
-                        const userModifications = {};
-                        if (schedule.completed) userModifications.completed = true;
-                        if (schedule.note) userModifications.note = schedule.note;
-                        if (schedule.link && !schedule.liveRoomUrl) userModifications.link = schedule.link;
-                        if (schedule.isFavorite) userModifications.isFavorite = true;
-                        if (schedule.isAnime) userModifications.isAnime = true;
-
-                        if (Object.keys(userModifications).length > 0) {
-                            userData[schedule.id] = userModifications;
-                        }
-                    }
-                });
-            } else if (typeof gistData === 'object') {
-                // 新格式：用户数据对象
-                userData = gistData;
-            } else {
-                throw new Error('数据格式不正确');
-            }
-
-            // 获取当前用户数据
+            const { userData, fileSizeKB } = await downloadFromGist(gistToken, gistId);
             const currentUserData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
+            const { mergedData, addedCount, updatedCount } = mergeUserData(currentUserData, userData);
 
-            // 合并用户数据
-            let addedCount = 0;
-            let updatedCount = 0;
-
-            Object.keys(userData).forEach(id => {
-                if (currentUserData[id]) {
-                    // 已存在，合并数据
-                    if (userData[id].isUserCreated) {
-                        currentUserData[id] = userData[id];
-                    } else {
-                        const existing = currentUserData[id];
-                        const imported = userData[id];
-
-                        if (imported.note) {
-                            if (existing.note && existing.note !== imported.note) {
-                                currentUserData[id].note = `${existing.note}\n---\n${imported.note}`;
-                            } else {
-                                currentUserData[id].note = imported.note;
-                            }
-                        }
-
-                        if (imported.completed) currentUserData[id].completed = true;
-                        if (imported.link) currentUserData[id].link = imported.link;
-                        if (imported.isFavorite) currentUserData[id].isFavorite = true;
-                        if (imported.isAnime) currentUserData[id].isAnime = true;
-                    }
-                    updatedCount++;
-                } else {
-                    currentUserData[id] = userData[id];
-                    addedCount++;
-                }
-            });
-
-            // 保存合并后的用户数据
-            localStorage.setItem(USER_DATA_KEY, JSON.stringify(currentUserData));
-
-            // 重新加载日程
-            const baseSchedules = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
-
-            const mergedSchedules = baseSchedules.map(baseItem => {
-                const userItem = currentUserData[baseItem.id];
-                return {
-                    ...baseItem,
-                    completed: userItem?.completed || false,
-                    note: userItem?.note || '',
-                    link: userItem?.link || baseItem.link || '',
-                    isFavorite: userItem?.isFavorite || false,
-                    isAnime: userItem?.isAnime || baseItem.isAnime || false,
-                    isBaseSchedule: true
-                };
-            });
-
-            const userSchedules = Object.values(currentUserData)
-                .filter(item => item.isUserCreated)
-                .map(item => ({
-                    ...item,
-                    isAnime: item.isAnime || false,
-                    isFavorite: item.isFavorite || false
-                }));
-
-            setSchedules([...mergedSchedules, ...userSchedules]);
+            localStorage.setItem(USER_DATA_KEY, JSON.stringify(mergedData));
+            const newSchedules = reloadSchedules(mergedData);
+            setSchedules(newSchedules);
 
             alert(`成功从 Gist 加载数据！\n\n- 新增：${addedCount} 条\n- 更新：${updatedCount} 条\n- 文件大小：${fileSizeKB} KB`);
         } catch (err) {
@@ -1631,83 +792,11 @@ function App() {
 
         setIsGistSyncing(true);
         try {
-            const response = await fetch(`https://api.github.com/gists/${gistId}`, {
-                headers: {
-                    'Authorization': `token ${gistToken}`,
-                }
-            });
+            const { userData, fileSizeKB } = await downloadFromGist(gistToken, gistId);
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || '读取失败');
-            }
-
-            const gist = await response.json();
-            const file = gist.files['asoul-user-data.json'] || gist.files['asoul-calendar-data.json'];
-
-            if (!file) {
-                throw new Error('Gist 中未找到数据文件');
-            }
-
-            const fileSizeKB = (file.size / 1024).toFixed(2);
-            const gistData = JSON.parse(file.content);
-
-            // 检查格式并转换
-            let userData = {};
-
-            if (Array.isArray(gistData)) {
-                // 旧格式转换
-                alert('检测到旧格式数据，正在转换...');
-                gistData.forEach(schedule => {
-                    if (schedule.isUserCreated) {
-                        userData[schedule.id] = { ...schedule, isUserCreated: true };
-                    } else {
-                        const userModifications = {};
-                        if (schedule.completed) userModifications.completed = true;
-                        if (schedule.note) userModifications.note = schedule.note;
-                        if (schedule.link && !schedule.liveRoomUrl) userModifications.link = schedule.link;
-                        if (schedule.isFavorite) userModifications.isFavorite = true;
-                        if (schedule.isAnime) userModifications.isAnime = true;
-
-                        if (Object.keys(userModifications).length > 0) {
-                            userData[schedule.id] = userModifications;
-                        }
-                    }
-                });
-            } else if (typeof gistData === 'object') {
-                userData = gistData;
-            } else {
-                throw new Error('数据格式不正确');
-            }
-
-            // 完全替换用户数据
             localStorage.setItem(USER_DATA_KEY, JSON.stringify(userData));
-
-            // 重新加载日程
-            const baseSchedules = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
-
-            const mergedSchedules = baseSchedules.map(baseItem => {
-                const userItem = userData[baseItem.id];
-                return {
-                    ...baseItem,
-                    completed: userItem?.completed || false,
-                    note: userItem?.note || '',
-                    link: userItem?.link || baseItem.link || '',
-                    isFavorite: userItem?.isFavorite || false,
-                    isAnime: userItem?.isAnime || baseItem.isAnime || false,
-                    isBaseSchedule: true
-                };
-            });
-
-            const userSchedules = Object.values(userData)
-                .filter(item => item.isUserCreated)
-                .map(item => ({
-                    ...item,
-                    isAnime: item.isAnime || false,
-                    isFavorite: item.isFavorite || false
-                }));
-
-            setSchedules([...mergedSchedules, ...userSchedules]);
+            const newSchedules = reloadSchedules(userData);
+            setSchedules(newSchedules);
 
             alert(`成功从 Gist 恢复用户数据！\n\n- 用户数据记录：${Object.keys(userData).length} 条\n- 文件大小：${fileSizeKB} KB`);
         } catch (err) {
@@ -2073,7 +1162,18 @@ function App() {
                                                 </div>
                                                 <div className="flex-1 space-y-1 overflow-y-auto custom-scrollbar pr-1">
                                                     {daySchedules.length > 0 ? daySchedules.map(item => (
-                                                        <ScheduleCard key={item.id} item={item} />
+                                                        <ScheduleCard
+                                                            key={item.id}
+                                                            item={item}
+                                                            toggleComplete={toggleComplete}
+                                                            toggleFavorite={toggleFavorite}
+                                                            handleBilibiliSearch={handleBilibiliSearch}
+                                                            setEditingNoteId={setEditingNoteId}
+                                                            setTempNote={setTempNote}
+                                                            setTempLink={setTempLink}
+                                                            setSchedules={setSchedules}
+                                                            setExternalLinkModal={setExternalLinkModal}
+                                                        />
                                                     )) : <div
                                                         className="h-24 flex items-center justify-center italic text-[10px] text-slate-300 dark:text-slate-800 border-2 border-dashed border-slate-50 dark:border-slate-900 rounded-xl">
                                                         暂无</div>}
@@ -2099,7 +1199,20 @@ function App() {
                                         .filter(item => item.isAnime || item.isFavorite)
                                         .sort((a, b) => new Date(b.date.replace(/\//g, '-')) - new Date(a.date.replace(/\//g, '-')))
                                         .map(item => (
-                                            <ScheduleCard key={item.id} item={item} showDate={false} showMoveButton={false} />
+                                            <ScheduleCard
+                                                key={item.id}
+                                                item={item}
+                                                showDate={false}
+                                                showMoveButton={false}
+                                                toggleComplete={toggleComplete}
+                                                toggleFavorite={toggleFavorite}
+                                                handleBilibiliSearch={handleBilibiliSearch}
+                                                setEditingNoteId={setEditingNoteId}
+                                                setTempNote={setTempNote}
+                                                setTempLink={setTempLink}
+                                                setSchedules={setSchedules}
+                                                setExternalLinkModal={setExternalLinkModal}
+                                            />
                                         ))
                                     }
                                     {schedules.filter(item => item.isAnime || item.isFavorite).length === 0 && (
@@ -2142,7 +1255,19 @@ function App() {
                             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
                                     {filteredSchedules.map(item => (
-                                        <ScheduleCard key={item.id} item={item} showDate={true} />
+                                        <ScheduleCard
+                                            key={item.id}
+                                            item={item}
+                                            showDate={true}
+                                            toggleComplete={toggleComplete}
+                                            toggleFavorite={toggleFavorite}
+                                            handleBilibiliSearch={handleBilibiliSearch}
+                                            setEditingNoteId={setEditingNoteId}
+                                            setTempNote={setTempNote}
+                                            setTempLink={setTempLink}
+                                            setSchedules={setSchedules}
+                                            setExternalLinkModal={setExternalLinkModal}
+                                        />
                                     ))}
                                 </div>
                             </div>
