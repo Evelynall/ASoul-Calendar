@@ -12,6 +12,7 @@ export const ANIME_VIEW_KEY = 'asoul_anime_view';
 export const GIST_TOKEN_KEY = 'asoul_gist_token';
 export const GIST_ID_KEY = 'asoul_gist_id';
 export const CUSTOM_COLORS_KEY = 'asoul_custom_colors';
+export const LINKS_KEY = 'asoul_quick_links';
 
 // 基础日程库的 GitHub 地址
 export const BASE_SCHEDULES_URL = 'https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json';

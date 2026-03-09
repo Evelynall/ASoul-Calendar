@@ -7,6 +7,8 @@ import FirstTimeNotice from './FirstTimeNotice';
 import Icon from './components/Icon';
 import SettingsSection from './components/SettingsSection';
 import ScheduleCard from './components/ScheduleCard';
+import ChangelogView from './components/ChangelogView';
+import LinksView from './components/LinksView';
 import { parseICS, syncIcsCalendars } from './services/icsParser';
 import {
     extractUserData,
@@ -38,6 +40,7 @@ import {
     GIST_TOKEN_KEY,
     GIST_ID_KEY,
     CUSTOM_COLORS_KEY,
+    LINKS_KEY,
     BASE_SCHEDULES_URL,
     DEFAULT_MEMBER_CONFIG,
     LIVE_ROOM_URLS
@@ -82,6 +85,71 @@ function App() {
     const [customColors, setCustomColors] = useState(() => {
         const saved = localStorage.getItem(CUSTOM_COLORS_KEY);
         return saved ? JSON.parse(saved) : {};
+    });
+    const [links, setLinks] = useState(() => {
+        const saved = localStorage.getItem(LINKS_KEY);
+        if (saved) {
+            return JSON.parse(saved);
+        }
+        // 默认链接
+        return [
+            {
+                id: 'default-1',
+                title: 'A-SOUL官方账号',
+                description: 'A-SOUL官方B站账号',
+                url: 'https://space.bilibili.com/703007996',
+                icon: 'bilibili'
+            },
+            {
+                id: 'default-2',
+                title: '枝江日程表',
+                description: '粉丝搭建的第三方日程表',
+                url: 'https://asoul.love/',
+                icon: 'calendar'
+            },
+            {
+                id: 'default-3',
+                title: '贝极星空间站的日常',
+                description: '贝拉的tag动态',
+                url: 'https://www.bilibili.com/v/topic/detail?topic_id=32780&topic_name=%E8%B4%9D%E6%9E%81%E6%98%9F%E7%A9%BA%E9%97%B4%E7%AB%99%E7%9A%84%E6%97%A5%E5%B8%B8',
+                icon: 'calendar'
+            },
+            {
+                id: 'default-4',
+                title: '嘉心糖的手帐本',
+                description: '嘉然的tag动态',
+                url: 'https://www.bilibili.com/v/topic/detail?topic_id=36443&topic_name=%E5%98%89%E5%BF%83%E7%B3%96%E7%9A%84%E6%89%8B%E5%B8%90%E6%9C%AC',
+                icon: 'calendar'
+            },
+            {
+                id: 'default-5',
+                title: '乃琳夸夸群',
+                description: '乃琳的tag动态',
+                url: 'https://www.bilibili.com/v/topic/detail?topic_id=9825&topic_name=%E4%B9%83%E7%90%B3%E5%A4%B8%E5%A4%B8%E7%BE%A4',
+                icon: 'calendar'
+            },
+            {
+                id: 'default-6',
+                title: '今日宜心动',
+                description: '心宜的tag动态',
+                url: 'https://www.bilibili.com/v/topic/detail?topic_id=1120163&topic_name=%E4%BB%8A%E6%97%A5%E5%AE%9C%E5%BF%83%E5%8A%A8',
+                icon: 'calendar'
+            },
+            {
+                id: 'default-7',
+                title: '小海诺嘀嘀嘀吹',
+                description: '思诺的tag动态',
+                url: 'https://www.bilibili.com/v/topic/detail?topic_id=1123339&topic_name=%E5%B0%8F%E6%B5%B7%E8%AF%BA%E5%98%80%E5%98%80%E5%98%80%E5%90%B9',
+                icon: 'calendar'
+            },
+            {
+                id: 'default-8',
+                title: 'GitHub仓库',
+                description: '本项目开源地址',
+                url: 'https://github.com/Evelynall/ASoul-Data',
+                icon: 'github'
+            }
+        ];
     });
 
     // Supabase 同步相关状态
@@ -304,6 +372,10 @@ function App() {
         // 强制重新渲染以应用新颜色
         setSchedules(prev => [...prev]);
     }, [customColors]);
+
+    useEffect(() => {
+        localStorage.setItem(LINKS_KEY, JSON.stringify(links));
+    }, [links]);
 
     // 保存 Supabase 配置
     useEffect(() => {
@@ -985,6 +1057,12 @@ function App() {
                         >
                             追番表
                         </button>
+                        <button
+                            onClick={() => setView('links')}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${view === 'links' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                        >
+                            快捷链接
+                        </button>
                     </div>
                     <div className="relative flex-1 max-w-md">
                         <div
@@ -1246,6 +1324,10 @@ function App() {
                         </div>
                     )}
 
+                    {view === 'links' && (
+                        <LinksView links={links} setLinks={setLinks} />
+                    )}
+
                     {view === 'search' && (
                         <div
                             className="h-full max-w-3xl mx-auto p-4 md:p-8 flex flex-col overflow-hidden text-slate-900 dark:text-slate-100">
@@ -1271,6 +1353,12 @@ function App() {
                                     ))}
                                 </div>
                             </div>
+                        </div>
+                    )}
+
+                    {view === 'changelog' && (
+                        <div className="h-full overflow-y-auto custom-scrollbar p-4 md:p-8">
+                            <ChangelogView onBack={() => setView('settings')} />
                         </div>
                     )}
 
@@ -1938,8 +2026,19 @@ function App() {
                                         <div className="text-slate-500 dark:text-slate-400">整体画面风格均仿照枝江日程表设计。感谢未署名的枝江日程表开发者。</div>
                                     </div>
                                     <div className="text-sm">
-                                        <div className="font-medium text-slate-900 dark:text-slate-100">版本信息</div>
-                                        <div className="text-slate-500 dark:text-slate-400">v2.0.8</div>
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <div className="font-medium text-slate-900 dark:text-slate-100">版本信息</div>
+                                                <div className="text-slate-500 dark:text-slate-400">v1.1.0</div>
+                                            </div>
+                                            <button
+                                                onClick={() => setView('changelog')}
+                                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                                            >
+                                                <Icon name="file-text" className="w-4 h-4" />
+                                                查看更新日志
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="text-sm">
                                         <div className="font-medium text-slate-900 dark:text-slate-100">主要功能</div>
@@ -2120,7 +2219,17 @@ function App() {
                                 className="text-blue-600 dark:text-blue-400 hover:underline ml-1">
                                 枝江站
                             </a>
-                            &nbsp;的分享与许可！
+                            &nbsp;的分享与许可！&nbsp;
+                            <a
+                                onClick={(e) => {
+                                    e.preventDefault(); // 阻止<a>标签的默认跳转行为
+                                    setView('changelog'); // 执行你的逻辑
+                                }}
+                                className="text-blue-600 dark:text-blue-400 hover:underline ml-1"
+                                href="#" // 加空href保证浏览器识别为可点击元素（可选，但推荐）
+                            >
+                                查看更新日志
+                            </a>
                         </span>
                     </div>
                 </footer>
