@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 // 默认 Supabase 配置（公共服务）
 const DEFAULT_SUPABASE_URL = 'https://aeyssvgeughzikmigrxw.supabase.co';
-const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFleXNzdmdldWdoemlrbWlncnh3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDA5NzI5NzcsImV4cCI6MjA1NjU0ODk3N30.sb_publishable__0It3s_EGA0JLjYDicxGjw_k94IhQVe';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable__0It3s_EGA0JLjYDicxGjw_k94IhQVe';
 
 // Supabase 配置
 const SUPABASE_URL_KEY = 'asoul_supabase_url';
