@@ -1,6 +1,14 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.2.1',
+        date: '2026-03-10',
+        type: 'patch', // major, minor, patch
+        changes: [
+            { type: 'feature', text: '基础日程库修改为加速链接，国内访问更稳定。感谢A-SOUL导航站运营者 @和泉-紗霧 的指导。' }
+        ]
+    },
+    {
         version: '1.2.0',
         date: '2026-03-09',
         type: 'minor', // major, minor, patch
