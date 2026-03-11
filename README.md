@@ -1,5 +1,7 @@
 # A-SOUL 追番表
 
+![](https://pic1.imgdb.cn/item/69b0d06489a0c32ecc5290da.png)
+
 一个受[枝江日程表](https://asoul.love/)启发制作的方便补录播的工具。
 
 ## 主要功能
