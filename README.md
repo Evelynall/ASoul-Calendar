@@ -4,6 +4,8 @@
 
 一个受[枝江日程表](https://asoul.love/)启发制作的方便补录播的工具。
 
+![介绍视频](https://www.bilibili.com/video/BV15zNuzjE6d/)
+
 ## 主要功能
 
 - 📅 日历视图显示直播日程
