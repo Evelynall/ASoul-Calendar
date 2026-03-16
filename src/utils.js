@@ -1,8 +1,13 @@
-import { BASE_SCHEDULES_URL, BASE_SCHEDULES_LAST_FETCH_KEY, BASE_SCHEDULES_KEY, LIVE_ROOM_URLS, DEFAULT_MEMBER_CONFIG, CUSTOM_COLORS_KEY, SPECIAL_GROUP_COLOR_KEY } from './constants';
+import { BASE_SCHEDULES_URL, BACKUP_BASE_SCHEDULES_URLS, BASE_SCHEDULES_LAST_FETCH_KEY, BASE_SCHEDULES_KEY, LIVE_ROOM_URLS, DEFAULT_MEMBER_CONFIG, CUSTOM_COLORS_KEY, SPECIAL_GROUP_COLOR_KEY } from './constants';
 
 // 添加时间戳参数以绕过CDN缓存
 export const getBaseSchedulesUrl = () => {
     return `${BASE_SCHEDULES_URL}?t=${Date.now()}`;
+};
+
+// 获取备用基础日程库URL列表
+export const getBackupBaseSchedulesUrls = () => {
+    return BACKUP_BASE_SCHEDULES_URLS.map(url => `${url}?t=${Date.now()}`);
 };
 
 // 检查是否需要重新获取基础日程（2小时限制）

@@ -47,6 +47,7 @@ import {
 } from './constants';
 import {
     getBaseSchedulesUrl,
+    getBackupBaseSchedulesUrls,
     shouldFetchBaseSchedules,
     getMemberConfigColors,
     getMemberByLiveRoomUrl,
@@ -194,43 +195,20 @@ function App() {
         const loadSchedules = async () => {
             setIsLoadingBase(true);
             try {
-                // 1. 尝试从网络加载基础日程库
+                // 1. 先加载缓存数据，立即显示界面
                 let baseSchedules = [];
-                let baseVersion = null;
-
-                // 检查是否需要重新获取（2小时限制）
-                if (shouldFetchBaseSchedules()) {
+                const cached = localStorage.getItem(BASE_SCHEDULES_KEY);
+                if (cached) {
                     try {
-                        const response = await fetch(getBaseSchedulesUrl());
-                        if (response.ok) {
-                            const data = await response.json();
-                            baseSchedules = data.schedules || [];
-                            baseVersion = data.version || Date.now();
-
-                            // 缓存基础日程库和获取时间
-                            localStorage.setItem(BASE_SCHEDULES_KEY, JSON.stringify(baseSchedules));
-                            localStorage.setItem(BASE_SCHEDULES_VERSION_KEY, baseVersion.toString());
-                            localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
-                        }
-                    } catch (error) {
-                        console.warn('无法加载基础日程库，使用缓存数据:', error);
-                        // 如果网络加载失败，使用缓存
-                        const cached = localStorage.getItem(BASE_SCHEDULES_KEY);
-                        if (cached) {
-                            baseSchedules = JSON.parse(cached);
-                        }
-                    }
-                } else {
-                    // 未超过2小时，直接使用缓存
-                    console.log('使用缓存的基础日程（未超过2小时）');
-                    const cached = localStorage.getItem(BASE_SCHEDULES_KEY);
-                    if (cached) {
                         baseSchedules = JSON.parse(cached);
+                        console.log('使用缓存的基础日程');
+                    } catch (e) {
+                        console.warn('缓存数据解析失败:', e);
                     }
                 }
 
                 // 2. 加载用户数据（完成状态、备注、用户添加的日程）
-                let userData = null;
+                let userData = {};
 
                 // 尝试从 localStorage 读取
                 try {
@@ -244,7 +222,7 @@ function App() {
                 }
 
                 // 如果 localStorage 失败，尝试从 IndexedDB 恢复
-                if (!userData) {
+                if (!userData || Object.keys(userData).length === 0) {
                     try {
                         const indexedData = await loadFromIndexedDB(USER_DATA_KEY);
                         if (indexedData) {
@@ -259,13 +237,7 @@ function App() {
                     }
                 }
 
-                // 如果两者都失败，使用空对象
-                if (!userData) {
-                    userData = {};
-                    console.log('[数据加载] 使用空用户数据');
-                }
-
-                // 3. 合并数据
+                // 3. 合并缓存数据并立即显示
                 const mergedSchedules = baseSchedules.map(baseItem => {
                     const userItem = userData[baseItem.id];
                     return {
@@ -288,21 +260,108 @@ function App() {
                         isFavorite: item.isFavorite || false
                     }));
 
+                // 立即设置日程数据，避免白屏
                 setSchedules([...mergedSchedules, ...userSchedules]);
+                setIsLoadingBase(false);
+
+                // 5. 后台检查是否需要更新基础日程库
+                if (shouldFetchBaseSchedules()) {
+                    console.log('后台更新基础日程库...');
+
+                    // 尝试多个URL，提高成功率
+                    const urlsToTry = [getBaseSchedulesUrl(), ...getBackupBaseSchedulesUrls()];
+                    let updateSuccess = false;
+
+                    for (const url of urlsToTry) {
+                        try {
+                            // 添加超时控制，避免长时间阻塞
+                            const controller = new AbortController();
+                            const timeoutId = setTimeout(() => controller.abort(), 8000); // 8秒超时
+
+                            console.log(`尝试从 ${url} 获取数据...`);
+                            const response = await fetch(url, {
+                                signal: controller.signal,
+                                headers: {
+                                    'Cache-Control': 'no-cache'
+                                }
+                            });
+
+                            clearTimeout(timeoutId);
+
+                            if (response.ok) {
+                                const data = await response.json();
+                                const newBaseSchedules = data.schedules || [];
+                                const baseVersion = data.version || Date.now();
+
+                                // 检查数据是否有更新
+                                if (JSON.stringify(newBaseSchedules) !== JSON.stringify(baseSchedules)) {
+                                    console.log('发现基础日程库更新，重新合并数据');
+
+                                    // 缓存新的基础日程库
+                                    localStorage.setItem(BASE_SCHEDULES_KEY, JSON.stringify(newBaseSchedules));
+                                    localStorage.setItem(BASE_SCHEDULES_VERSION_KEY, baseVersion.toString());
+                                    localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
+
+                                    // 重新合并数据
+                                    const updatedMergedSchedules = newBaseSchedules.map(baseItem => {
+                                        const userItem = userData[baseItem.id];
+                                        return {
+                                            ...baseItem,
+                                            completed: userItem?.completed || false,
+                                            note: userItem?.note || '',
+                                            link: userItem?.link || baseItem.link || '',
+                                            isFavorite: userItem?.isFavorite || false,
+                                            isAnime: userItem?.isAnime || baseItem.isAnime || false,
+                                            isBaseSchedule: true
+                                        };
+                                    });
+
+                                    setSchedules([...updatedMergedSchedules, ...userSchedules]);
+                                } else {
+                                    // 数据没有变化，只更新时间戳
+                                    localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
+                                    console.log('基础日程库无更新');
+                                }
+
+                                updateSuccess = true;
+                                break; // 成功获取数据，跳出循环
+                            }
+                        } catch (error) {
+                            if (error.name === 'AbortError') {
+                                console.warn(`从 ${url} 获取数据超时`);
+                            } else {
+                                console.warn(`从 ${url} 获取数据失败:`, error);
+                            }
+                            // 继续尝试下一个URL
+                        }
+                    }
+
+                    if (!updateSuccess) {
+                        console.warn('所有基础日程库URL都无法访问，继续使用缓存数据');
+                    }
+                }
+
             } catch (error) {
                 console.error('加载日程数据失败:', error);
+                setIsLoadingBase(false);
+
                 // 如果完全失败，尝试加载旧的完整数据（兼容旧版本）
                 const oldData = localStorage.getItem(STORAGE_KEY);
                 if (oldData) {
-                    const data = JSON.parse(oldData);
-                    setSchedules(Array.isArray(data) ? data.map(item => ({
-                        ...item,
-                        isAnime: item.isAnime || false,
-                        isFavorite: item.isFavorite || false
-                    })) : []);
+                    try {
+                        const data = JSON.parse(oldData);
+                        setSchedules(Array.isArray(data) ? data.map(item => ({
+                            ...item,
+                            isAnime: item.isAnime || false,
+                            isFavorite: item.isFavorite || false
+                        })) : []);
+                    } catch (e) {
+                        console.error('旧数据解析失败:', e);
+                        setSchedules([]);
+                    }
+                } else {
+                    setSchedules([]);
                 }
-            } finally {
-                setIsLoadingBase(false);
             }
         };
 

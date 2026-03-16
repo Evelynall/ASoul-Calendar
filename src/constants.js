@@ -17,6 +17,12 @@ export const LINKS_KEY = 'asoul_quick_links';
 // 基础日程库的 GitHub 地址
 export const BASE_SCHEDULES_URL = 'https://gh-proxy.org/https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json';
 
+// 备用基础日程库地址
+export const BACKUP_BASE_SCHEDULES_URLS = [
+    'https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json',
+    'https://cdn.jsdelivr.net/gh/Evelynall/ASoul-Data@main/base-schedules.json'
+];
+
 // 默认成员配置
 export const DEFAULT_MEMBER_CONFIG = {
     '贝拉': { color: '#DB7D74', textColor: '#FFFFFF' },
