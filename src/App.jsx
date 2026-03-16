@@ -9,6 +9,7 @@ import SettingsSection from './components/SettingsSection';
 import ScheduleCard from './components/ScheduleCard';
 import ChangelogView from './components/ChangelogView';
 import LinksView from './components/LinksView';
+import NetworkStatus from './components/NetworkStatus';
 import { parseICS, syncIcsCalendars } from './services/icsParser';
 import {
     extractUserData,
@@ -47,6 +48,7 @@ import {
 } from './constants';
 import {
     getBaseSchedulesUrl,
+    getBackupBaseSchedulesUrls,
     shouldFetchBaseSchedules,
     getMemberConfigColors,
     getMemberByLiveRoomUrl,
@@ -194,43 +196,20 @@ function App() {
         const loadSchedules = async () => {
             setIsLoadingBase(true);
             try {
-                // 1. 尝试从网络加载基础日程库
+                // 1. 先加载缓存数据，立即显示界面
                 let baseSchedules = [];
-                let baseVersion = null;
-
-                // 检查是否需要重新获取（2小时限制）
-                if (shouldFetchBaseSchedules()) {
+                const cached = localStorage.getItem(BASE_SCHEDULES_KEY);
+                if (cached) {
                     try {
-                        const response = await fetch(getBaseSchedulesUrl());
-                        if (response.ok) {
-                            const data = await response.json();
-                            baseSchedules = data.schedules || [];
-                            baseVersion = data.version || Date.now();
-
-                            // 缓存基础日程库和获取时间
-                            localStorage.setItem(BASE_SCHEDULES_KEY, JSON.stringify(baseSchedules));
-                            localStorage.setItem(BASE_SCHEDULES_VERSION_KEY, baseVersion.toString());
-                            localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
-                        }
-                    } catch (error) {
-                        console.warn('无法加载基础日程库，使用缓存数据:', error);
-                        // 如果网络加载失败，使用缓存
-                        const cached = localStorage.getItem(BASE_SCHEDULES_KEY);
-                        if (cached) {
-                            baseSchedules = JSON.parse(cached);
-                        }
-                    }
-                } else {
-                    // 未超过2小时，直接使用缓存
-                    console.log('使用缓存的基础日程（未超过2小时）');
-                    const cached = localStorage.getItem(BASE_SCHEDULES_KEY);
-                    if (cached) {
                         baseSchedules = JSON.parse(cached);
+                        console.log('使用缓存的基础日程');
+                    } catch (e) {
+                        console.warn('缓存数据解析失败:', e);
                     }
                 }
 
                 // 2. 加载用户数据（完成状态、备注、用户添加的日程）
-                let userData = null;
+                let userData = {};
 
                 // 尝试从 localStorage 读取
                 try {
@@ -244,7 +223,7 @@ function App() {
                 }
 
                 // 如果 localStorage 失败，尝试从 IndexedDB 恢复
-                if (!userData) {
+                if (!userData || Object.keys(userData).length === 0) {
                     try {
                         const indexedData = await loadFromIndexedDB(USER_DATA_KEY);
                         if (indexedData) {
@@ -259,13 +238,7 @@ function App() {
                     }
                 }
 
-                // 如果两者都失败，使用空对象
-                if (!userData) {
-                    userData = {};
-                    console.log('[数据加载] 使用空用户数据');
-                }
-
-                // 3. 合并数据
+                // 3. 合并缓存数据并立即显示
                 const mergedSchedules = baseSchedules.map(baseItem => {
                     const userItem = userData[baseItem.id];
                     return {
@@ -288,21 +261,133 @@ function App() {
                         isFavorite: item.isFavorite || false
                     }));
 
+                // 立即设置日程数据，避免白屏
                 setSchedules([...mergedSchedules, ...userSchedules]);
+                setIsLoadingBase(false);
+
+                // 5. 后台检查是否需要更新基础日程库（仅在线时）
+                if (shouldFetchBaseSchedules() && navigator.onLine) {
+                    console.log('后台更新基础日程库...');
+
+                    // 尝试多个URL，按国内网络友好程度排序
+                    const urlsToTry = [getBaseSchedulesUrl(), ...getBackupBaseSchedulesUrls()];
+                    let updateSuccess = false;
+
+                    // 并发尝试前两个URL，提高成功率
+                    const tryUrls = async (urls, concurrent = 2) => {
+                        const promises = urls.slice(0, concurrent).map(async (url) => {
+                            try {
+                                const controller = new AbortController();
+                                const timeoutId = setTimeout(() => controller.abort(), 5000); // 5秒超时
+
+                                console.log(`尝试从 ${url} 获取数据...`);
+                                const response = await fetch(url, {
+                                    signal: controller.signal,
+                                    headers: {
+                                        'Cache-Control': 'no-cache',
+                                        'Accept': 'application/json'
+                                    }
+                                });
+
+                                clearTimeout(timeoutId);
+
+                                if (response.ok) {
+                                    const data = await response.json();
+                                    return { success: true, data, url };
+                                }
+                                return { success: false, url, error: `HTTP ${response.status}` };
+                            } catch (error) {
+                                return {
+                                    success: false,
+                                    url,
+                                    error: error.name === 'AbortError' ? '超时' : error.message
+                                };
+                            }
+                        });
+
+                        const results = await Promise.allSettled(promises);
+                        const successful = results.find(result =>
+                            result.status === 'fulfilled' && result.value.success
+                        );
+
+                        if (successful) {
+                            return successful.value;
+                        }
+
+                        // 如果前面的URL都失败了，尝试剩余的URL
+                        if (urls.length > concurrent) {
+                            return tryUrls(urls.slice(concurrent), 1);
+                        }
+
+                        return { success: false };
+                    };
+
+                    const result = await tryUrls(urlsToTry);
+
+                    if (result.success) {
+                        const newBaseSchedules = result.data.schedules || [];
+                        const baseVersion = result.data.version || Date.now();
+
+                        // 检查数据是否有更新
+                        if (JSON.stringify(newBaseSchedules) !== JSON.stringify(baseSchedules)) {
+                            console.log('发现基础日程库更新，重新合并数据');
+
+                            // 缓存新的基础日程库
+                            localStorage.setItem(BASE_SCHEDULES_KEY, JSON.stringify(newBaseSchedules));
+                            localStorage.setItem(BASE_SCHEDULES_VERSION_KEY, baseVersion.toString());
+                            localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
+
+                            // 重新合并数据
+                            const updatedMergedSchedules = newBaseSchedules.map(baseItem => {
+                                const userItem = userData[baseItem.id];
+                                return {
+                                    ...baseItem,
+                                    completed: userItem?.completed || false,
+                                    note: userItem?.note || '',
+                                    link: userItem?.link || baseItem.link || '',
+                                    isFavorite: userItem?.isFavorite || false,
+                                    isAnime: userItem?.isAnime || baseItem.isAnime || false,
+                                    isBaseSchedule: true
+                                };
+                            });
+
+                            setSchedules([...updatedMergedSchedules, ...userSchedules]);
+                        } else {
+                            // 数据没有变化，只更新时间戳
+                            localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
+                            console.log('基础日程库无更新');
+                        }
+
+                        updateSuccess = true;
+                        console.log(`成功从 ${result.url} 获取数据`);
+                    } else {
+                        console.warn('所有基础日程库URL都无法访问，继续使用缓存数据');
+                    }
+                } else if (!navigator.onLine) {
+                    console.log('离线模式，跳过基础日程库更新');
+                }
+
             } catch (error) {
                 console.error('加载日程数据失败:', error);
+                setIsLoadingBase(false);
+
                 // 如果完全失败，尝试加载旧的完整数据（兼容旧版本）
                 const oldData = localStorage.getItem(STORAGE_KEY);
                 if (oldData) {
-                    const data = JSON.parse(oldData);
-                    setSchedules(Array.isArray(data) ? data.map(item => ({
-                        ...item,
-                        isAnime: item.isAnime || false,
-                        isFavorite: item.isFavorite || false
-                    })) : []);
+                    try {
+                        const data = JSON.parse(oldData);
+                        setSchedules(Array.isArray(data) ? data.map(item => ({
+                            ...item,
+                            isAnime: item.isAnime || false,
+                            isFavorite: item.isFavorite || false
+                        })) : []);
+                    } catch (e) {
+                        console.error('旧数据解析失败:', e);
+                        setSchedules([]);
+                    }
+                } else {
+                    setSchedules([]);
                 }
-            } finally {
-                setIsLoadingBase(false);
             }
         };
 
@@ -372,6 +457,11 @@ function App() {
         // 强制重新渲染以应用新颜色
         setSchedules(prev => [...prev]);
     }, [customColors]);
+
+    useEffect(() => {
+        // 当组合色开关变化时，强制重新渲染以应用新的配色逻辑
+        setSchedules(prev => [...prev]);
+    }, [useSpecialGroupColor]);
 
     useEffect(() => {
         localStorage.setItem(LINKS_KEY, JSON.stringify(links));
@@ -1037,6 +1127,7 @@ function App() {
     return (
         <>
             <FirstTimeNotice />
+            <NetworkStatus />
             <div className="flex flex-col h-screen transition-colors duration-300 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100">
                 <header
                     className="border-b px-4 md:px-6 py-3 flex items-center justify-between shadow-sm shrink-0 bg-white dark:bg-slate-900 dark:border-slate-800 gap-4 text-slate-900 dark:text-slate-100">
@@ -1395,11 +1486,11 @@ function App() {
                                         </div>
                                     </div>
 
-                                    <div className="hidden flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                    <div className="flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                                         <div>
-                                            <div className="font-medium">{useSpecialGroupColor ? '开启组合配色' : '关闭组合配色'}</div>
+                                            <div className="font-medium">组合色配置</div>
                                             <div className="text-xs text-slate-500">
-                                                {useSpecialGroupColor ? 'A-SOUL和小心思组合使用单独的配色' : 'A-SOUL和小心思组合和其他日程一样显示'}
+                                                {useSpecialGroupColor ? '使用A-SOUL和小心思的专用组合色（仅在单一色模式下生效）' : '按照多成员组合逻辑显示'}
                                             </div>
                                         </div>
                                         <button

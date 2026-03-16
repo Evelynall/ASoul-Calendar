@@ -14,8 +14,16 @@ export const GIST_ID_KEY = 'asoul_gist_id';
 export const CUSTOM_COLORS_KEY = 'asoul_custom_colors';
 export const LINKS_KEY = 'asoul_quick_links';
 
-// 基础日程库的 GitHub 地址
-export const BASE_SCHEDULES_URL = 'https://gh-proxy.org/https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json';
+// 基础日程库的 GitHub 地址 - 优先使用国内友好的CDN
+export const BASE_SCHEDULES_URL = 'https://cdn.jsdelivr.net/gh/Evelynall/ASoul-Data@main/base-schedules.json';
+
+// 备用基础日程库地址 - 按国内网络友好程度排序
+export const BACKUP_BASE_SCHEDULES_URLS = [
+    'https://fastly.jsdelivr.net/gh/Evelynall/ASoul-Data@main/base-schedules.json',
+    'https://gcore.jsdelivr.net/gh/Evelynall/ASoul-Data@main/base-schedules.json',
+    'https://gh-proxy.org/https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json',
+    'https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json'
+];
 
 // 默认成员配置
 export const DEFAULT_MEMBER_CONFIG = {
@@ -24,8 +32,16 @@ export const DEFAULT_MEMBER_CONFIG = {
     '乃琳': { color: '#576690', textColor: '#FFFFFF' },
     '思诺': { color: '#7252C0', textColor: '#FFFFFF' },
     '心宜': { color: '#C93773', textColor: '#FFFFFF' },
-    'A-SOUL': { color: '#55ACEE', textColor: '#FFFFFF' },
-    '小心思': { color: '#4CADAF', textColor: '#FFFFFF' },
+    'A-SOUL': {
+        color: '#55ACEE',
+        textColor: '#FFFFFF',
+        multiColors: ['#DB7D74', '#E799B0', '#576690'] // 贝拉、嘉然、乃琳的颜色
+    },
+    '小心思': {
+        color: '#4CADAF',
+        textColor: '#FFFFFF',
+        multiColors: ['#C93773', '#7252C0'] // 心宜、思诺的颜色
+    },
     '其他': { color: '#94a3b8', textColor: '#FFFFFF' }
 };
 
