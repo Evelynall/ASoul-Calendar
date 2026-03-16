@@ -1,14 +1,6 @@
 // 更新日志数据
 export const changelogData = [
     {
-        version: '1.2.2',
-        date: '2026-03-10',
-        type: 'patch', // major, minor, patch
-        changes: [
-            { type: 'feature', text: '修复了组合色的部分逻辑，现在已经可以选择是否开启组合色了。' }
-        ]
-    },
-    {
         version: '1.2.1',
         date: '2026-03-10',
         type: 'patch', // major, minor, patch

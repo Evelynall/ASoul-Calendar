@@ -1,13 +1,8 @@
-import { BASE_SCHEDULES_URL, BACKUP_BASE_SCHEDULES_URLS, BASE_SCHEDULES_LAST_FETCH_KEY, BASE_SCHEDULES_KEY, LIVE_ROOM_URLS, DEFAULT_MEMBER_CONFIG, CUSTOM_COLORS_KEY, SPECIAL_GROUP_COLOR_KEY } from './constants';
+import { BASE_SCHEDULES_URL, BASE_SCHEDULES_LAST_FETCH_KEY, BASE_SCHEDULES_KEY, LIVE_ROOM_URLS, DEFAULT_MEMBER_CONFIG, CUSTOM_COLORS_KEY, SPECIAL_GROUP_COLOR_KEY } from './constants';
 
 // 添加时间戳参数以绕过CDN缓存
 export const getBaseSchedulesUrl = () => {
     return `${BASE_SCHEDULES_URL}?t=${Date.now()}`;
-};
-
-// 获取备用基础日程库URL列表
-export const getBackupBaseSchedulesUrls = () => {
-    return BACKUP_BASE_SCHEDULES_URLS.map(url => `${url}?t=${Date.now()}`);
 };
 
 // 检查是否需要重新获取基础日程（2小时限制）
@@ -66,32 +61,28 @@ export const getMemberConfig = (category, displayMode = 'single', liveRoomUrl = 
         primaryMember = getMemberByLiveRoomUrl(liveRoomUrl);
     }
 
-    // 当组合色开关关闭时，先将特殊组合转换为普通多成员组合
-    if (!useSpecialGroupColor) {
-        if (category === 'A-SOUL') {
-            category = '贝拉+嘉然+乃琳';
-        } else if (category === '小心思') {
-            category = '心宜+思诺';
-        }
-    }
-
-    // 如果组合色开关开启，且是已知的组合，直接返回组合配置（优先级最高）
-    if (useSpecialGroupColor && memberConfig[category]) {
-        const config = { ...memberConfig[category] };
-
-        // 在多色分割模式下，如果组合有multiColors配置，使用它；否则使用单色
-        if (displayMode === 'multi-color' && config.multiColors && config.multiColors.length > 1) {
-            // 如果有直播间URL对应的主要成员，调整颜色顺序
-            if (primaryMember && category.includes('+')) {
-                const primaryColor = memberConfig[primaryMember]?.color;
-                if (primaryColor && config.multiColors.includes(primaryColor)) {
-                    const filteredColors = config.multiColors.filter(c => c !== primaryColor);
-                    config.multiColors = [primaryColor, ...filteredColors];
+    // 如果是已知的组合，根据特殊组合颜色开关决定处理方式
+    if (memberConfig[category]) {
+        if (useSpecialGroupColor) {
+            const config = { ...memberConfig[category] };
+            if (primaryMember && category.includes('+') && displayMode === 'multi-color') {
+                config.color = memberConfig[primaryMember]?.color || config.color;
+                if (config.multiColors && config.multiColors.length > 1) {
+                    const primaryColor = memberConfig[primaryMember]?.color;
+                    if (primaryColor && config.multiColors.includes(primaryColor)) {
+                        const filteredColors = config.multiColors.filter(c => c !== primaryColor);
+                        config.multiColors = [primaryColor, ...filteredColors];
+                    }
                 }
             }
+            return config;
+        } else {
+            if (category === 'A-SOUL') {
+                category = '贝拉+嘉然+乃琳';
+            } else if (category === '小心思') {
+                category = '心宜+思诺';
+            }
         }
-
-        return config;
     }
 
     // 处理多成员组合（如"贝拉等"）
@@ -108,29 +99,6 @@ export const getMemberConfig = (category, displayMode = 'single', liveRoomUrl = 
     // 处理多成员组合（如"贝拉+嘉然"）
     if (category.includes('+')) {
         const members = category.split('+').map(m => m.trim()).filter(m => m);
-
-        // 如果组合色开关开启，检查是否为特定组合
-        if (useSpecialGroupColor) {
-            // 检查是否为 A-SOUL 组合（贝拉+嘉然+乃琳的任意排列）
-            const asoulMembers = ['贝拉', '嘉然', '乃琳'];
-            const isAsoulCombo = members.length === 3 &&
-                members.every(member => asoulMembers.includes(member)) &&
-                asoulMembers.every(member => members.includes(member));
-
-            if (isAsoulCombo && memberConfig['A-SOUL']) {
-                return { ...memberConfig['A-SOUL'] };
-            }
-
-            // 检查是否为小心思组合（心宜+思诺的任意排列）
-            const xiaoxinsiMembers = ['心宜', '思诺'];
-            const isXiaoxinsiCombo = members.length === 2 &&
-                members.every(member => xiaoxinsiMembers.includes(member)) &&
-                xiaoxinsiMembers.every(member => members.includes(member));
-
-            if (isXiaoxinsiCombo && memberConfig['小心思']) {
-                return { ...memberConfig['小心思'] };
-            }
-        }
 
         if (primaryMember && members.includes(primaryMember)) {
             const sortedMembers = [primaryMember, ...members.filter(m => m !== primaryMember)];
