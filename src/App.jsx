@@ -374,6 +374,11 @@ function App() {
     }, [customColors]);
 
     useEffect(() => {
+        // 当组合色开关变化时，强制重新渲染以应用新的配色逻辑
+        setSchedules(prev => [...prev]);
+    }, [useSpecialGroupColor]);
+
+    useEffect(() => {
         localStorage.setItem(LINKS_KEY, JSON.stringify(links));
     }, [links]);
 
@@ -1395,11 +1400,11 @@ function App() {
                                         </div>
                                     </div>
 
-                                    <div className="hidden flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                    <div className="flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                                         <div>
-                                            <div className="font-medium">{useSpecialGroupColor ? '开启组合配色' : '关闭组合配色'}</div>
+                                            <div className="font-medium">组合色配置</div>
                                             <div className="text-xs text-slate-500">
-                                                {useSpecialGroupColor ? 'A-SOUL和小心思组合使用单独的配色' : 'A-SOUL和小心思组合和其他日程一样显示'}
+                                                {useSpecialGroupColor ? '使用A-SOUL和小心思的专用组合色（仅在单一色模式下生效）' : '按照多成员组合逻辑显示'}
                                             </div>
                                         </div>
                                         <button

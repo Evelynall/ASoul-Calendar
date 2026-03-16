@@ -24,8 +24,16 @@ export const DEFAULT_MEMBER_CONFIG = {
     '乃琳': { color: '#576690', textColor: '#FFFFFF' },
     '思诺': { color: '#7252C0', textColor: '#FFFFFF' },
     '心宜': { color: '#C93773', textColor: '#FFFFFF' },
-    'A-SOUL': { color: '#55ACEE', textColor: '#FFFFFF' },
-    '小心思': { color: '#4CADAF', textColor: '#FFFFFF' },
+    'A-SOUL': {
+        color: '#55ACEE',
+        textColor: '#FFFFFF',
+        multiColors: ['#DB7D74', '#E799B0', '#576690'] // 贝拉、嘉然、乃琳的颜色
+    },
+    '小心思': {
+        color: '#4CADAF',
+        textColor: '#FFFFFF',
+        multiColors: ['#C93773', '#7252C0'] // 心宜、思诺的颜色
+    },
     '其他': { color: '#94a3b8', textColor: '#FFFFFF' }
 };
 
