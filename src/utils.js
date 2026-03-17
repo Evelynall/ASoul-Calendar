@@ -25,9 +25,9 @@ export const shouldFetchBaseSchedules = () => {
 
     const now = Date.now();
     const lastFetchTime = parseInt(lastFetch, 10);
-    const sixHours = 6 * 60 * 60 * 1000; // 延长到6小时
+    const twoHours = 2 * 60 * 60 * 1000;
 
-    return (now - lastFetchTime) >= sixHours;
+    return (now - lastFetchTime) >= twoHours;
 };
 
 // 获取成员配置（支持自定义颜色）

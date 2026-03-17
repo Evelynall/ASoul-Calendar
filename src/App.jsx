@@ -63,6 +63,7 @@ const MEMBER_CONFIG = getMemberConfigColors();
 function App() {
     const [schedules, setSchedules] = useState([]);
     const [isLoadingBase, setIsLoadingBase] = useState(true);
+    const [fetchError, setFetchError] = useState(false);
 
     const [currentDate, setCurrentDate] = useState(() => toZeroDate());
     const [view, setView] = useState(() => localStorage.getItem(ANIME_VIEW_KEY) || 'calendar');
@@ -268,76 +269,21 @@ function App() {
                 // 5. 后台检查是否需要更新基础日程库（仅在线时）
                 if (shouldFetchBaseSchedules() && navigator.onLine) {
                     console.log('后台更新基础日程库...');
+                    try {
+                        const response = await fetch(getBaseSchedulesUrl());
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-                    // 尝试多个URL，按国内网络友好程度排序
-                    const urlsToTry = [getBaseSchedulesUrl(), ...getBackupBaseSchedulesUrls()];
-                    let updateSuccess = false;
+                        const data = await response.json();
+                        const newBaseSchedules = data.schedules || [];
+                        const baseVersion = data.version || Date.now();
 
-                    // 并发尝试前两个URL，提高成功率
-                    const tryUrls = async (urls, concurrent = 2) => {
-                        const promises = urls.slice(0, concurrent).map(async (url) => {
-                            try {
-                                const controller = new AbortController();
-                                const timeoutId = setTimeout(() => controller.abort(), 5000); // 5秒超时
+                        localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
 
-                                console.log(`尝试从 ${url} 获取数据...`);
-                                const response = await fetch(url, {
-                                    signal: controller.signal,
-                                    headers: {
-                                        'Cache-Control': 'no-cache',
-                                        'Accept': 'application/json'
-                                    }
-                                });
-
-                                clearTimeout(timeoutId);
-
-                                if (response.ok) {
-                                    const data = await response.json();
-                                    return { success: true, data, url };
-                                }
-                                return { success: false, url, error: `HTTP ${response.status}` };
-                            } catch (error) {
-                                return {
-                                    success: false,
-                                    url,
-                                    error: error.name === 'AbortError' ? '超时' : error.message
-                                };
-                            }
-                        });
-
-                        const results = await Promise.allSettled(promises);
-                        const successful = results.find(result =>
-                            result.status === 'fulfilled' && result.value.success
-                        );
-
-                        if (successful) {
-                            return successful.value;
-                        }
-
-                        // 如果前面的URL都失败了，尝试剩余的URL
-                        if (urls.length > concurrent) {
-                            return tryUrls(urls.slice(concurrent), 1);
-                        }
-
-                        return { success: false };
-                    };
-
-                    const result = await tryUrls(urlsToTry);
-
-                    if (result.success) {
-                        const newBaseSchedules = result.data.schedules || [];
-                        const baseVersion = result.data.version || Date.now();
-
-                        // 检查数据是否有更新
                         if (JSON.stringify(newBaseSchedules) !== JSON.stringify(baseSchedules)) {
                             console.log('发现基础日程库更新，重新合并数据');
-
-                            // 缓存新的基础日程库
                             localStorage.setItem(BASE_SCHEDULES_KEY, JSON.stringify(newBaseSchedules));
                             localStorage.setItem(BASE_SCHEDULES_VERSION_KEY, baseVersion.toString());
-                            localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
 
-                            // 重新合并数据
                             const updatedMergedSchedules = newBaseSchedules.map(baseItem => {
                                 const userItem = userData[baseItem.id];
                                 return {
@@ -350,18 +296,14 @@ function App() {
                                     isBaseSchedule: true
                                 };
                             });
-
                             setSchedules([...updatedMergedSchedules, ...userSchedules]);
                         } else {
-                            // 数据没有变化，只更新时间戳
-                            localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
                             console.log('基础日程库无更新');
                         }
-
-                        updateSuccess = true;
-                        console.log(`成功从 ${result.url} 获取数据`);
-                    } else {
-                        console.warn('所有基础日程库URL都无法访问，继续使用缓存数据');
+                        console.log('后台更新基础日程库成功');
+                    } catch (error) {
+                        console.warn('后台更新基础日程库失败:', error);
+                        if (!cached) setFetchError(true);
                     }
                 } else if (!navigator.onLine) {
                     console.log('离线模式，跳过基础日程库更新');
@@ -1128,6 +1070,12 @@ function App() {
         <>
             <FirstTimeNotice />
             <NetworkStatus />
+            {fetchError && (
+                <div className="fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg bg-red-500 text-white flex items-center gap-3">
+                    <span>日程库拉取失败，请检查网络连接</span>
+                    <button onClick={() => setFetchError(false)} className="text-white/80 hover:text-white text-lg leading-none">×</button>
+                </div>
+            )}
             <div className="flex flex-col h-screen transition-colors duration-300 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100">
                 <header
                     className="border-b px-4 md:px-6 py-3 flex items-center justify-between shadow-sm shrink-0 bg-white dark:bg-slate-900 dark:border-slate-800 gap-4 text-slate-900 dark:text-slate-100">
