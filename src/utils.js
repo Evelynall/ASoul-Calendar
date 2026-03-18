@@ -10,14 +10,9 @@ export const getBackupBaseSchedulesUrls = () => {
     return BACKUP_BASE_SCHEDULES_URLS.map(url => `${url}?t=${Date.now()}`);
 };
 
-// 检查是否需要重新获取基础日程（6小时限制，减少网络请求）
+// 检查是否需要重新获取基础日程（2小时限制，减少网络请求）
 export const shouldFetchBaseSchedules = () => {
     const lastFetch = localStorage.getItem(BASE_SCHEDULES_LAST_FETCH_KEY);
-    const cachedSchedules = localStorage.getItem(BASE_SCHEDULES_KEY);
-
-    if (!cachedSchedules) {
-        return true;
-    }
 
     if (!lastFetch) {
         return true;
