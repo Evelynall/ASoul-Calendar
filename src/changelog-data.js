@@ -1,6 +1,22 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.2.4',
+        date: '2026-03-18',
+        type: 'patch', // major, minor, patch
+        changes: [
+            { type: 'feature', text: '优化拉取逻辑，现在能更及时的收到更新日程了' }
+        ]
+    },
+    {
+        version: '1.2.3',
+        date: '2026-03-17',
+        type: 'patch', // major, minor, patch
+        changes: [
+            { type: 'feature', text: '修复了可能拉取失败的问题，提高了拉取基础数据库的频率' }
+        ]
+    },
+    {
         version: '1.2.2',
         date: '2026-03-10',
         type: 'patch', // major, minor, patch
