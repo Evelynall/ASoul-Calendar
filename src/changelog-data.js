@@ -1,6 +1,14 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.2.6',
+        date: '2026-03-27',
+        type: 'minor', // major, minor, patch
+        changes: [
+            { type: 'feature', text: '日历视图添加快捷拉取日程按钮' },
+            { type: 'feature', text: '日历视图添加两个云同步的上传按钮，整合上传与导出为数据同步按钮' }
+        ]
+    }, {
         version: '1.2.5',
         date: '2026-03-27',
         type: 'patch', // major, minor, patch

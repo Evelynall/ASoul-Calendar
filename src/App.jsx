@@ -75,6 +75,7 @@ function App() {
     const [themeMode, setThemeMode] = useState(() => localStorage.getItem(THEME_KEY) || 'auto');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [showSyncMenu, setShowSyncMenu] = useState(false);
     const [icsUrls, setIcsUrls] = useState(() => {
         const saved = localStorage.getItem(ICS_CONFIG_KEY);
         return saved ? JSON.parse(saved) : '';
@@ -500,6 +501,17 @@ function App() {
         localStorage.setItem(ANIME_VIEW_KEY, view);
     }, [view]);
 
+    // 点击外部关闭同步菜单
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (showSyncMenu) {
+                setShowSyncMenu(false);
+            }
+        };
+        document.addEventListener('click', handleClickOutside);
+        return () => document.removeEventListener('click', handleClickOutside);
+    }, [showSyncMenu]);
+
     const handleBilibiliSearch = (item) => {
         const parts = item.date.split('/');
         const year = parts[0];
@@ -620,6 +632,53 @@ function App() {
             alert('同步失败：' + err.message);
         } finally {
             setIsSyncing(false);
+        }
+    };
+
+    const handleUpdateBaseSchedules = async () => {
+        setIsLoadingBase(true);
+        try {
+            const response = await fetch(getBaseSchedulesUrl());
+            if (!response.ok) throw new Error('无法加载基础日程库');
+
+            const data = await response.json();
+            const baseSchedules = data.schedules || [];
+            const baseVersion = data.version || Date.now();
+
+            localStorage.setItem(BASE_SCHEDULES_KEY, JSON.stringify(baseSchedules));
+            localStorage.setItem(BASE_SCHEDULES_VERSION_KEY, baseVersion.toString());
+            localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
+
+            const userData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
+
+            const mergedSchedules = baseSchedules.map(baseItem => {
+                const userItem = userData[baseItem.id];
+                return {
+                    ...baseItem,
+                    completed: userItem?.completed || false,
+                    note: userItem?.note || '',
+                    link: userItem?.link || baseItem.link || '',
+                    isFavorite: userItem?.isFavorite || false,
+                    isAnime: userItem?.isAnime || baseItem.isAnime || false,
+                    isBaseSchedule: true
+                };
+            });
+
+            const userSchedules = Object.values(userData)
+                .filter(item => item.isUserCreated)
+                .map(item => ({
+                    ...item,
+                    isAnime: item.isAnime || false,
+                    isFavorite: item.isFavorite || false
+                }));
+
+            setSchedules([...mergedSchedules, ...userSchedules]);
+            alert(`成功更新基础日程库！共 ${baseSchedules.length} 条日程`);
+        } catch (error) {
+            console.error('更新失败:', error);
+            alert('更新基础日程库失败：' + error.message);
+        } finally {
+            setIsLoadingBase(false);
         }
     };
 
@@ -1196,44 +1255,109 @@ function App() {
                                                 <Icon name="plus" className="w-3.5 h-3.5" /> <span
                                                     className="hidden sm:inline">添加日历日程</span>
                                             </button>
-                                            <button onClick={() => {
-                                                // 导出用户数据（与设置中的导出功能相同）
-                                                const userData = {};
-                                                schedules.forEach(schedule => {
-                                                    if (schedule.isUserCreated) {
-                                                        userData[schedule.id] = { ...schedule, isUserCreated: true };
-                                                    } else if (schedule.isBaseSchedule) {
-                                                        const userModifications = {};
-                                                        if (schedule.completed) userModifications.completed = true;
-                                                        if (schedule.note) userModifications.note = schedule.note;
-                                                        if (schedule.link && schedule.link.trim()) {
-                                                            const isSystemLink = schedule.link === schedule.liveRoomUrl ||
-                                                                schedule.link === schedule.dynamicUrl ||
-                                                                schedule.link === schedule.icsUrl;
-                                                            if (!isSystemLink) {
-                                                                userModifications.link = schedule.link;
-                                                            }
-                                                        }
-                                                        if (schedule.isFavorite) userModifications.isFavorite = true;
-                                                        if (schedule.isAnime) userModifications.isAnime = true;
-
-                                                        if (Object.keys(userModifications).length > 0) {
-                                                            userData[schedule.id] = userModifications;
-                                                        }
-                                                    }
-                                                });
-
-                                                const blob = new Blob([JSON.stringify(userData, null, 2)], { type: 'application/json' });
-                                                const a = document.createElement('a');
-                                                a.href = URL.createObjectURL(blob);
-                                                const timestamp = new Date().toISOString().replace(/[\-:T.]/g, '').slice(0, 14);
-                                                a.download = `user-data-${timestamp}.json`;
-                                                a.click();
-                                            }} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg
-                                text-xs md:text-sm font-bold shadow-md hover:bg-emerald-700 transition-all shrink-0">
-                                                <Icon name="download" className="w-3.5 h-3.5" /> <span
-                                                    className="hidden sm:inline">导出本地备份</span>
+                                            <button
+                                                onClick={handleUpdateBaseSchedules}
+                                                disabled={isLoadingBase}
+                                                className={`flex items-center gap-1.5 px-3 py-1.5 ${isLoadingBase ? 'bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700'} text-white rounded-lg text-xs md:text-sm font-bold shadow-md transition-all shrink-0`}
+                                            >
+                                                <Icon name="refresh" className={`w-3.5 h-3.5 ${isLoadingBase ? 'animate-spin' : ''}`} />
+                                                <span className="hidden sm:inline">{isLoadingBase ? '更新中...' : '更新基础日程库'}</span>
                                             </button>
+                                            {/* 数据同步下拉菜单 */}
+                                            <div className="relative" onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                    onClick={() => setShowSyncMenu(!showSyncMenu)}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs md:text-sm font-bold shadow-md hover:bg-emerald-700 transition-all shrink-0"
+                                                >
+                                                    <Icon name="cloud" className="w-3.5 h-3.5" />
+                                                    <span className="hidden sm:inline">数据同步</span>
+                                                    <Icon name="chevron-down" className={`w-3 h-3 transition-transform ${showSyncMenu ? 'rotate-180' : ''}`} />
+                                                </button>
+
+                                                {showSyncMenu && (
+                                                    <div className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-lg border dark:border-slate-700 py-1 z-50">
+                                                        {/* 导出本地备份 */}
+                                                        <button onClick={() => {
+                                                            setShowSyncMenu(false);
+                                                            const userData = {};
+                                                            schedules.forEach(schedule => {
+                                                                if (schedule.isUserCreated) {
+                                                                    userData[schedule.id] = { ...schedule, isUserCreated: true };
+                                                                } else if (schedule.isBaseSchedule) {
+                                                                    const userModifications = {};
+                                                                    if (schedule.completed) userModifications.completed = true;
+                                                                    if (schedule.note) userModifications.note = schedule.note;
+                                                                    if (schedule.link && schedule.link.trim()) {
+                                                                        const isSystemLink = schedule.link === schedule.liveRoomUrl ||
+                                                                            schedule.link === schedule.dynamicUrl ||
+                                                                            schedule.link === schedule.icsUrl;
+                                                                        if (!isSystemLink) {
+                                                                            userModifications.link = schedule.link;
+                                                                        }
+                                                                    }
+                                                                    if (schedule.isFavorite) userModifications.isFavorite = true;
+                                                                    if (schedule.isAnime) userModifications.isAnime = true;
+
+                                                                    if (Object.keys(userModifications).length > 0) {
+                                                                        userData[schedule.id] = userModifications;
+                                                                    }
+                                                                }
+                                                            });
+
+                                                            const blob = new Blob([JSON.stringify(userData, null, 2)], { type: 'application/json' });
+                                                            const a = document.createElement('a');
+                                                            a.href = URL.createObjectURL(blob);
+                                                            const timestamp = new Date().toISOString().replace(/[\-:T.]/g, '').slice(0, 14);
+                                                            a.download = `user-data-${timestamp}.json`;
+                                                            a.click();
+                                                        }} className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
+                                                            <Icon name="download" className="w-4 h-4 text-emerald-500" />
+                                                            导出本地备份
+                                                        </button>
+
+                                                        <div className="border-t dark:border-slate-700 my-1"></div>
+
+                                                        {/* Gist 上传 */}
+                                                        <button onClick={() => {
+                                                            setShowSyncMenu(false);
+                                                            if (!gistToken) {
+                                                                alert('请先在设置中配置 GitHub Token');
+                                                                setView('settings');
+                                                                return;
+                                                            }
+                                                            handleSyncToGist();
+                                                        }} className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
+                                                            <Icon name="upload" className="w-4 h-4 text-purple-500" />
+                                                            上传到 Gist
+                                                        </button>
+
+                                                        {/* Supabase 上传 */}
+                                                        <button onClick={() => {
+                                                            setShowSyncMenu(false);
+                                                            if (!syncId) {
+                                                                alert('请先在设置中配置同步 ID');
+                                                                setView('settings');
+                                                                return;
+                                                            }
+                                                            handleUploadToSupabase();
+                                                        }} className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
+                                                            <Icon name="upload" className="w-4 h-4 text-green-500" />
+                                                            上传到云端
+                                                        </button>
+
+                                                        <div className="border-t dark:border-slate-700 my-1"></div>
+
+                                                        {/* 跳转到设置 */}
+                                                        <button onClick={() => {
+                                                            setShowSyncMenu(false);
+                                                            setView('settings');
+                                                        }} className="w-full px-4 py-2 text-left text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
+                                                            <Icon name="settings" className="w-4 h-4" />
+                                                            更多同步设置...
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </>
                                     )}
                                     {view === 'anime' && (
@@ -1543,53 +1667,7 @@ function App() {
                                     </div>
 
                                     <button
-                                        onClick={async () => {
-                                            setIsLoadingBase(true);
-                                            try {
-                                                const response = await fetch(getBaseSchedulesUrl());
-                                                if (!response.ok) throw new Error('无法加载基础日程库');
-
-                                                const data = await response.json();
-                                                const baseSchedules = data.schedules || [];
-                                                const baseVersion = data.version || Date.now();
-
-                                                localStorage.setItem(BASE_SCHEDULES_KEY, JSON.stringify(baseSchedules));
-                                                localStorage.setItem(BASE_SCHEDULES_VERSION_KEY, baseVersion.toString());
-                                                // 手动获取时更新最后获取时间
-                                                localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
-
-                                                const userData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
-
-                                                const mergedSchedules = baseSchedules.map(baseItem => {
-                                                    const userItem = userData[baseItem.id];
-                                                    return {
-                                                        ...baseItem,
-                                                        completed: userItem?.completed || false,
-                                                        note: userItem?.note || '',
-                                                        link: userItem?.link || baseItem.link || '',
-                                                        isFavorite: userItem?.isFavorite || false,
-                                                        isAnime: userItem?.isAnime || baseItem.isAnime || false,
-                                                        isBaseSchedule: true
-                                                    };
-                                                });
-
-                                                const userSchedules = Object.values(userData)
-                                                    .filter(item => item.isUserCreated)
-                                                    .map(item => ({
-                                                        ...item,
-                                                        isAnime: item.isAnime || false,
-                                                        isFavorite: item.isFavorite || false
-                                                    }));
-
-                                                setSchedules([...mergedSchedules, ...userSchedules]);
-                                                alert(`成功更新基础日程库！共 ${baseSchedules.length} 条日程`);
-                                            } catch (error) {
-                                                console.error('更新失败:', error);
-                                                alert('更新基础日程库失败：' + error.message);
-                                            } finally {
-                                                setIsLoadingBase(false);
-                                            }
-                                        }}
+                                        onClick={handleUpdateBaseSchedules}
                                         disabled={isLoadingBase}
                                         className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
                                     >
