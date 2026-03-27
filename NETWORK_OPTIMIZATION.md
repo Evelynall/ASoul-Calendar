@@ -10,12 +10,14 @@
 ## 优化措施
 
 ### 1. CDN 优化
-- **主要地址**：使用 `cdn.jsdelivr.net` 作为主要的基础日程库获取地址
-- **备用地址**：按国内网络友好程度排序：
-  - `fastly.jsdelivr.net`
-  - `gcore.jsdelivr.net` 
-  - `gh-proxy.org`
-  - `raw.githubusercontent.com`
+- **主要地址**：使用 `gh-proxy.org` 代理 `raw.githubusercontent.com`，数据实时，无CDN缓存延迟
+- **备用地址**：按优先级排序（前两个无CDN缓存延迟，后两个有最长24小时CDN缓存延迟）：
+  - `raw.githubusercontent.com`（直连GitHub，实时数据，国内可能较慢）
+  - `cdn.jsdelivr.net`（jsDelivr主节点，存在最长24小时CDN缓存）
+  - `fastly.jsdelivr.net`（jsDelivr Fastly节点，同上）
+  - `gcore.jsdelivr.net`（jsDelivr GCore节点，同上）
+
+> **注意**：jsDelivr 系列 CDN 存在约 24 小时的缓存刷新延迟，若数据仓库更新后需立即生效，请确保主地址和前两个备用地址可用。
 
 ### 2. 网络请求优化
 - **并发请求**：同时尝试前两个最快的 CDN 地址

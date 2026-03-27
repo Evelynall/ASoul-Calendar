@@ -14,15 +14,15 @@ export const GIST_ID_KEY = 'asoul_gist_id';
 export const CUSTOM_COLORS_KEY = 'asoul_custom_colors';
 export const LINKS_KEY = 'asoul_quick_links';
 
-// 基础日程库的 GitHub 地址 - 优先使用国内友好的CDN
-export const BASE_SCHEDULES_URL = 'https://cdn.jsdelivr.net/gh/Evelynall/ASoul-Data@main/base-schedules.json';
+// 基础日程库的 GitHub 地址 - 优先使用 gh-proxy 代理（实时数据，无CDN缓存延迟）
+export const BASE_SCHEDULES_URL = 'https://gh-proxy.org/https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json';
 
-// 备用基础日程库地址 - 按国内网络友好程度排序
+// 备用基础日程库地址 - 按优先级排序（前两个无CDN缓存，后三个有最长24小时CDN延迟）
 export const BACKUP_BASE_SCHEDULES_URLS = [
+    'https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json',
+    'https://cdn.jsdelivr.net/gh/Evelynall/ASoul-Data@main/base-schedules.json',
     'https://fastly.jsdelivr.net/gh/Evelynall/ASoul-Data@main/base-schedules.json',
-    'https://gcore.jsdelivr.net/gh/Evelynall/ASoul-Data@main/base-schedules.json',
-    'https://gh-proxy.org/https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json',
-    'https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json'
+    'https://gcore.jsdelivr.net/gh/Evelynall/ASoul-Data@main/base-schedules.json'
 ];
 
 // 默认成员配置

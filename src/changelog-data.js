@@ -1,6 +1,14 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.2.5',
+        date: '2026-03-27',
+        type: 'patch', // major, minor, patch
+        changes: [
+            { type: 'feature', text: '优化拉取逻辑，避免中转站的缓存导致日程更新延迟' }
+        ]
+    },
+    {
         version: '1.2.4',
         date: '2026-03-18',
         type: 'patch', // major, minor, patch
