@@ -1,6 +1,13 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.2.7',
+        date: '2026-04-02',
+        type: 'minor', // major, minor, patch
+        changes: [
+            { type: 'feature', text: '添加失效日程同步功能，现在因故移动、请假的日程会同步点灰，若有说明会在注释中显示。（数据手动同步，无法保证时效性）' }
+        ]
+    },{
         version: '1.2.6',
         date: '2026-03-27',
         type: 'minor', // major, minor, patch

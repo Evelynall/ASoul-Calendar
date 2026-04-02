@@ -174,8 +174,8 @@ export const reloadSchedules = (userData) => {
         const userItem = userData[baseItem.id];
         return {
             ...baseItem,
-            completed: userItem?.completed || false,
-            note: userItem?.note || '',
+            completed: userItem?.completed || baseItem.completed || false,
+            note: userItem?.note || baseItem.note || '',
             link: userItem?.link || baseItem.link || '',
             isFavorite: userItem?.isFavorite || false,
             isAnime: userItem?.isAnime || baseItem.isAnime || false,

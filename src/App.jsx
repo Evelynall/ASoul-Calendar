@@ -245,8 +245,8 @@ function App() {
                     const userItem = userData[baseItem.id];
                     return {
                         ...baseItem,
-                        completed: userItem?.completed || false,
-                        note: userItem?.note || '',
+                        completed: userItem?.completed || baseItem.completed || false,
+                        note: userItem?.note || baseItem.note || '',
                         link: userItem?.link || baseItem.link || '',
                         isFavorite: userItem?.isFavorite || false,
                         isAnime: userItem?.isAnime || baseItem.isAnime || false,
@@ -285,12 +285,38 @@ function App() {
                             localStorage.setItem(BASE_SCHEDULES_KEY, JSON.stringify(newBaseSchedules));
                             localStorage.setItem(BASE_SCHEDULES_VERSION_KEY, baseVersion.toString());
 
+                            // 同步基础日程中的 completed 和 note 到本地用户数据
+                            newBaseSchedules.forEach(baseItem => {
+                                if (!userData[baseItem.id]) {
+                                    userData[baseItem.id] = {};
+                                }
+                                
+                                // 如果基础日程中有 completed: true，同步到本地
+                                if (baseItem.completed === true && !userData[baseItem.id].completed) {
+                                    userData[baseItem.id].completed = true;
+                                }
+                                
+                                // 如果基础日程中有 note 内容，合并到本地
+                                if (baseItem.note && baseItem.note.trim()) {
+                                    if (userData[baseItem.id].note && userData[baseItem.id].note !== baseItem.note) {
+                                        // 如果本地已有不同的备注，合并两者
+                                        userData[baseItem.id].note = `${userData[baseItem.id].note}\n---\n${baseItem.note}`;
+                                    } else if (!userData[baseItem.id].note) {
+                                        // 如果本地没有备注，直接使用基础日程的备注
+                                        userData[baseItem.id].note = baseItem.note;
+                                    }
+                                }
+                            });
+
+                            // 保存更新后的用户数据
+                            localStorage.setItem(USER_DATA_KEY, JSON.stringify(userData));
+
                             const updatedMergedSchedules = newBaseSchedules.map(baseItem => {
                                 const userItem = userData[baseItem.id];
                                 return {
                                     ...baseItem,
-                                    completed: userItem?.completed || false,
-                                    note: userItem?.note || '',
+                                    completed: userItem?.completed || baseItem.completed || false,
+                                    note: userItem?.note || baseItem.note || '',
                                     link: userItem?.link || baseItem.link || '',
                                     isFavorite: userItem?.isFavorite || false,
                                     isAnime: userItem?.isAnime || baseItem.isAnime || false,
@@ -651,12 +677,38 @@ function App() {
 
             const userData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
 
+            // 同步基础日程中的 completed 和 note 到本地用户数据
+            baseSchedules.forEach(baseItem => {
+                if (!userData[baseItem.id]) {
+                    userData[baseItem.id] = {};
+                }
+                
+                // 如果基础日程中有 completed: true，同步到本地
+                if (baseItem.completed === true && !userData[baseItem.id].completed) {
+                    userData[baseItem.id].completed = true;
+                }
+                
+                // 如果基础日程中有 note 内容，合并到本地
+                if (baseItem.note && baseItem.note.trim()) {
+                    if (userData[baseItem.id].note && userData[baseItem.id].note !== baseItem.note) {
+                        // 如果本地已有不同的备注，合并两者
+                        userData[baseItem.id].note = `${userData[baseItem.id].note}\n---\n${baseItem.note}`;
+                    } else if (!userData[baseItem.id].note) {
+                        // 如果本地没有备注，直接使用基础日程的备注
+                        userData[baseItem.id].note = baseItem.note;
+                    }
+                }
+            });
+
+            // 保存更新后的用户数据
+            localStorage.setItem(USER_DATA_KEY, JSON.stringify(userData));
+
             const mergedSchedules = baseSchedules.map(baseItem => {
                 const userItem = userData[baseItem.id];
                 return {
                     ...baseItem,
-                    completed: userItem?.completed || false,
-                    note: userItem?.note || '',
+                    completed: userItem?.completed || baseItem.completed || false,
+                    note: userItem?.note || baseItem.note || '',
                     link: userItem?.link || baseItem.link || '',
                     isFavorite: userItem?.isFavorite || false,
                     isAnime: userItem?.isAnime || baseItem.isAnime || false,
@@ -812,8 +864,8 @@ function App() {
                     const userItem = currentUserData[baseItem.id];
                     return {
                         ...baseItem,
-                        completed: userItem?.completed || false,
-                        note: userItem?.note || '',
+                        completed: userItem?.completed || baseItem.completed || false,
+                        note: userItem?.note || baseItem.note || '',
                         link: userItem?.link || baseItem.link || '',
                         isFavorite: userItem?.isFavorite || false,
                         isAnime: userItem?.isAnime || baseItem.isAnime || false,
@@ -1093,8 +1145,8 @@ function App() {
                 const userItem = currentUserData[baseItem.id];
                 return {
                     ...baseItem,
-                    completed: userItem?.completed || false,
-                    note: userItem?.note || '',
+                    completed: userItem?.completed || baseItem.completed || false,
+                    note: userItem?.note || baseItem.note || '',
                     link: userItem?.link || baseItem.link || '',
                     isFavorite: userItem?.isFavorite || false,
                     isAnime: userItem?.isAnime || baseItem.isAnime || false,
