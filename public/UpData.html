@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="dns-prefetch" href="//gh-proxy.org">
+    <link rel="dns-prefetch" href="//raw.githubusercontent.com">
+    <title>枝江日程表 - 数据更新</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+        body {
+            font-family: 'Noto Sans SC', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+            min-height: 100vh;
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .schedule-card {
+            transition: all 0.2s ease;
+        }
+        .schedule-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-1px);
+        }
+
+        .tag {
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-weight: 500;
+        }
+
+        input[type="text"], input[type="password"], textarea, select {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #e2e8f0;
+            border-radius: 8px;
+            padding: 8px 12px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus, textarea:focus, select:focus {
+            border-color: rgba(139, 92, 246, 0.6);
+        }
+
+        textarea {
+            resize: vertical;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 3px;
+        }
+
+        .pulse-dot {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .toast {
+            animation: toastIn 0.3s ease, toastOut 0.3s ease 2.7s forwards;
+        }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes toastOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+
+        /* Checkbox custom style */
+        .custom-check {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            background: transparent;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .custom-check:checked {
+            background: #8b5cf6;
+            border-color: #8b5cf6;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3E%3C/svg%3E");
+            background-size: 14px;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+
+        .json-preview {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            color: #a5b4fc;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body class="text-slate-200">
+
+    <!-- Toast container -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2"></div>
+
+    <div class="max-w-4xl mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-violet-400 to-pink-400 bg-clip-text text-transparent mb-2">
+                枝江日程表 · 数据更新
+            </h1>
+            <p class="text-slate-400 text-sm">搜索基础日程，标记完成状态与备注，提交补丁到数据仓库</p>
+        </div>
+
+        <!-- Search Section -->
+        <div class="glass rounded-2xl p-6 mb-6">
+            <div class="flex flex-col sm:flex-row gap-3 mb-4">
+                <div class="flex-1 relative">
+                    <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                    <input type="text" id="searchInput" placeholder="搜索日程标题、副标题、成员..."
+                        class="w-full pl-10 pr-4 py-2.5 text-sm">
+                </div>
+                <div class="flex gap-2">
+                    <select id="categoryFilter" class="text-sm min-w-[100px]">
+                        <option value="">全部成员</option>
+                    </select>
+                    <select id="typeFilter" class="text-sm min-w-[100px]">
+                        <option value="">全部类型</option>
+                    </select>
+                    <button id="searchBtn"
+                        class="px-5 py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        搜索
+                    </button>
+                </div>
+            </div>
+
+            <!-- Data status -->
+            <div class="flex items-center justify-between text-xs text-slate-500">
+                <div class="flex items-center gap-2">
+                    <span id="statusDot" class="w-2 h-2 rounded-full bg-yellow-500 pulse-dot"></span>
+                    <span id="statusText">正在加载基础日程数据...</span>
+                </div>
+                <div>
+                    <span id="totalCount">-</span> 条日程
+                    <span class="mx-1">·</span>
+                    <span id="resultCount">-</span> 条结果
+                    <button id="refreshBtn" class="ml-2 text-slate-400 hover:text-slate-200 transition-colors" title="重新加载数据">
+                        <svg class="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div id="resultsContainer" class="space-y-3 mb-6"></div>
+
+        <!-- Empty state -->
+        <div id="emptyState" class="glass rounded-2xl p-12 text-center mb-6 hidden">
+            <svg class="w-16 h-16 mx-auto text-slate-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <p class="text-slate-400 text-lg mb-1">未找到匹配的日程</p>
+            <p class="text-slate-500 text-sm">尝试更换关键词或筛选条件</p>
+        </div>
+
+        <!-- Loading state -->
+        <div id="loadingState" class="glass rounded-2xl p-12 text-center mb-6">
+            <div class="inline-flex items-center gap-3 text-slate-400">
+                <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>正在加载基础日程数据...</span>
+            </div>
+        </div>
+
+        <!-- Selected Panel -->
+        <div id="selectedPanel" class="glass rounded-2xl p-6 mb-6 hidden fade-in">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-semibold flex items-center gap-2">
+                    <svg class="w-5 h-5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                    </svg>
+                    已选择的日程
+                    <span id="selectedCount" class="text-sm font-normal text-slate-400">(0)</span>
+                </h2>
+                <button id="clearSelection" class="text-xs text-slate-400 hover:text-red-400 transition-colors">
+                    清空选择
+                </button>
+            </div>
+
+            <!-- Selected list -->
+            <div id="selectedList" class="space-y-3 mb-4"></div>
+
+            <!-- JSON Preview -->
+            <div class="mb-4">
+                <button id="togglePreview" class="text-xs text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1 mb-2">
+                    <svg id="previewArrow" class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                    预览 JSON
+                </button>
+                <div id="jsonPreview" class="json-preview p-3 hidden max-h-48 overflow-y-auto text-xs"></div>
+            </div>
+
+            <!-- Token & Submit -->
+            <div class="border-t border-white/10 pt-4">
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <div class="flex-1 relative">
+                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+                        </svg>
+                        <input type="password" id="tokenInput" placeholder="输入 GitHub Personal Access Token"
+                            class="w-full pl-10 pr-4 py-2.5 text-sm">
+                    </div>
+                    <button id="submitBtn"
+                        class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                        </svg>
+                        提交补丁
+                    </button>
+                </div>
+                <p class="text-xs text-slate-500 mt-2">
+                    Token 不会保存，仅用于本次请求。需要有 <code class="text-slate-400">repo</code> 和 <code class="text-slate-400">workflow</code> 权限。
+                </p>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center text-xs text-slate-600 mt-8">
+            <a href="/ASoul-Calendar/" class="hover:text-slate-400 transition-colors">返回枝江日程表</a>
+        </div>
+    </div>
+
+    <script>
+        // ========== Config ==========
+        const BASE_SCHEDULES_URL = 'https://gh-proxy.org/https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json';
+        const BACKUP_URLS = [
+            'https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json',
+            'https://cdn.jsdelivr.net/gh/Evelynall/ASoul-Data@main/base-schedules.json',
+            'https://fastly.jsdelivr.net/gh/Evelynall/ASoul-Data@main/base-schedules.json',
+            'https://gcore.jsdelivr.net/gh/Evelynall/ASoul-Data@main/base-schedules.json'
+        ];
+        const API_URL = 'https://api.github.com/repos/Evelynall/ASoul-Data/actions/workflows/patch-schedule.yml/dispatches';
+
+        const MEMBER_COLORS = {
+            '贝拉': '#DB7D74',
+            '嘉然': '#E799B0',
+            '乃琳': '#576690',
+            '思诺': '#7252C0',
+            '心宜': '#C93773',
+            'A-SOUL': '#55ACEE',
+            '小心思': '#4CADAF',
+            '其他': '#94a3b8'
+        };
+
+        // ========== State ==========
+        let allSchedules = [];
+        let searchResults = [];
+        let selected = new Map(); // id -> { schedule, completed, note }
+
+        // ========== DOM Elements ==========
+        const $ = (sel) => document.querySelector(sel);
+        const $$ = (sel) => document.querySelectorAll(sel);
+
+        const searchInput = $('#searchInput');
+        const categoryFilter = $('#categoryFilter');
+        const typeFilter = $('#typeFilter');
+        const searchBtn = $('#searchBtn');
+        const refreshBtn = $('#refreshBtn');
+        const statusDot = $('#statusDot');
+        const statusText = $('#statusText');
+        const totalCount = $('#totalCount');
+        const resultCount = $('#resultCount');
+        const resultsContainer = $('#resultsContainer');
+        const emptyState = $('#emptyState');
+        const loadingState = $('#loadingState');
+        const selectedPanel = $('#selectedPanel');
+        const selectedCount = $('#selectedCount');
+        const selectedList = $('#selectedList');
+        const clearSelection = $('#clearSelection');
+        const togglePreview = $('#togglePreview');
+        const jsonPreview = $('#jsonPreview');
+        const previewArrow = $('#previewArrow');
+        const tokenInput = $('#tokenInput');
+        const submitBtn = $('#submitBtn');
+
+        // ========== Utilities ==========
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function showToast(message, type = 'info') {
+            const container = $('#toast-container');
+            const toast = document.createElement('div');
+            const colors = {
+                success: 'bg-emerald-600',
+                error: 'bg-red-600',
+                info: 'bg-violet-600',
+                warning: 'bg-yellow-600'
+            };
+            toast.className = `toast ${colors[type]} text-white px-4 py-2.5 rounded-lg text-sm shadow-lg flex items-center gap-2`;
+            const icons = {
+                success: '<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>',
+                error: '<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>',
+                info: '<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+                warning: '<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>'
+            };
+            toast.innerHTML = `${icons[type]}<span>${escapeHtml(message)}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // ========== Data Fetching ==========
+        async function fetchSchedules() {
+            statusDot.className = 'w-2 h-2 rounded-full bg-yellow-500 pulse-dot';
+            statusText.textContent = '正在加载基础日程数据...';
+            loadingState.classList.remove('hidden');
+            resultsContainer.innerHTML = '';
+            emptyState.classList.add('hidden');
+
+            const urls = [BASE_SCHEDULES_URL, ...BACKUP_URLS];
+            for (const url of urls) {
+                try {
+                    const res = await fetch(`${url}?t=${Date.now()}`);
+                    if (!res.ok) continue;
+                    const data = await res.json();
+                    allSchedules = data.schedules || [];
+                    initFilters();
+                    statusDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+                    statusText.textContent = `数据已加载 (${new URL(url).hostname})`;
+                    loadingState.classList.add('hidden');
+                    totalCount.textContent = allSchedules.length;
+                    return;
+                } catch (e) {
+                    console.warn(`Failed to fetch from ${url}:`, e);
+                }
+            }
+
+            statusDot.className = 'w-2 h-2 rounded-full bg-red-500';
+            statusText.textContent = '所有数据源均加载失败，请检查网络';
+            loadingState.classList.add('hidden');
+            showToast('无法加载基础日程数据', 'error');
+        }
+
+        // ========== Filters ==========
+        function initFilters() {
+            const categories = [...new Set(allSchedules.map(s => s.category).filter(Boolean))].sort();
+            const types = [...new Set(allSchedules.map(s => s.type).filter(Boolean))].sort();
+
+            const prevCat = categoryFilter.value;
+            const prevType = typeFilter.value;
+
+            categoryFilter.innerHTML = '<option value="">全部成员</option>';
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat;
+                opt.textContent = cat;
+                categoryFilter.appendChild(opt);
+            });
+            categoryFilter.value = prevCat;
+
+            typeFilter.innerHTML = '<option value="">全部类型</option>';
+            types.forEach(type => {
+                const opt = document.createElement('option');
+                opt.value = type;
+                opt.textContent = type;
+                typeFilter.appendChild(opt);
+            });
+            typeFilter.value = prevType;
+        }
+
+        // ========== Search ==========
+        function doSearch() {
+            const query = searchInput.value.trim().toLowerCase();
+            const catFilter = categoryFilter.value;
+            const typeFilterVal = typeFilter.value;
+
+            if (!query && !catFilter && !typeFilterVal) {
+                searchResults = [];
+            } else {
+                searchResults = allSchedules.filter(s => {
+                    if (catFilter && s.category !== catFilter) return false;
+                    if (typeFilterVal && s.type !== typeFilterVal) return false;
+                    if (query) {
+                        const haystack = `${s.title || ''} ${s.subTitle || ''} ${s.category || ''} ${s.id || ''}`.toLowerCase();
+                        return haystack.includes(query);
+                    }
+                    return true;
+                });
+            }
+
+            resultCount.textContent = searchResults.length;
+            renderResults();
+        }
+
+        // ========== Rendering ==========
+        function getMemberColor(category) {
+            return MEMBER_COLORS[category] || '#94a3b8';
+        }
+
+        function renderResults() {
+            resultsContainer.innerHTML = '';
+
+            const hasActiveFilter = searchInput.value.trim() || categoryFilter.value || typeFilter.value;
+            if (searchResults.length === 0 && allSchedules.length > 0 && hasActiveFilter) {
+                emptyState.classList.remove('hidden');
+                return;
+            }
+            emptyState.classList.add('hidden');
+
+            // Show at most 50 results
+            const display = searchResults.slice(0, 50);
+
+            display.forEach(schedule => {
+                const isSelected = selected.has(schedule.id);
+                const color = getMemberColor(schedule.category);
+                const card = document.createElement('div');
+                card.className = `schedule-card glass rounded-xl p-4 cursor-pointer ${isSelected ? 'ring-2 ring-violet-500/50' : ''} fade-in`;
+                card.dataset.id = schedule.id;
+
+                card.innerHTML = `
+                    <div class="flex items-start gap-3">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1 flex-wrap">
+                                <span class="tag text-white" style="background:${color}">${escapeHtml(schedule.category || '未知')}</span>
+                                <span class="tag bg-slate-700 text-slate-300">${escapeHtml(schedule.type || '未知')}</span>
+                                <span class="text-xs text-slate-500">${escapeHtml(schedule.date || '')} ${escapeHtml(schedule.time || '')}</span>
+                            </div>
+                            <h3 class="text-sm font-medium text-slate-100 truncate">${escapeHtml(schedule.title || '无标题')}</h3>
+                            ${schedule.subTitle ? `<p class="text-xs text-slate-400 truncate mt-0.5">${escapeHtml(schedule.subTitle)}</p>` : ''}
+                            <p class="text-[10px] text-slate-600 mt-1 font-mono">${escapeHtml(schedule.id)}</p>
+                        </div>
+                        <div class="flex-shrink-0 mt-1">
+                            ${isSelected ?
+                                `<button class="select-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-600/30 text-violet-300 hover:bg-red-600/30 hover:text-red-300 transition-colors">取消选择</button>` :
+                                `<button class="select-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-600 text-white hover:bg-violet-500 transition-colors">选择</button>`
+                            }
+                        </div>
+                    </div>
+                `;
+
+                card.querySelector('.select-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    toggleSelect(schedule);
+                });
+
+                resultsContainer.appendChild(card);
+            });
+
+            if (searchResults.length > 50) {
+                const more = document.createElement('div');
+                more.className = 'text-center text-xs text-slate-500 py-2';
+                more.textContent = `还有 ${searchResults.length - 50} 条结果未显示，请缩小搜索范围`;
+                resultsContainer.appendChild(more);
+            }
+        }
+
+        function toggleSelect(schedule) {
+            if (selected.has(schedule.id)) {
+                selected.delete(schedule.id);
+            } else {
+                selected.set(schedule.id, { schedule, completed: false, note: '' });
+            }
+            renderResults();
+            renderSelectedPanel();
+        }
+
+        // ========== Selected Panel ==========
+        function renderSelectedPanel() {
+            if (selected.size === 0) {
+                selectedPanel.classList.add('hidden');
+                return;
+            }
+            selectedPanel.classList.remove('hidden');
+            selectedCount.textContent = `(${selected.size})`;
+
+            selectedList.innerHTML = '';
+            selected.forEach((item, id) => {
+                const { schedule } = item;
+                const color = getMemberColor(schedule.category);
+                const row = document.createElement('div');
+                row.className = 'bg-white/5 rounded-lg p-3';
+                row.innerHTML = `
+                    <div class="flex items-start gap-3">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-2 flex-wrap">
+                                <span class="tag text-white" style="background:${color}">${escapeHtml(schedule.category)}</span>
+                                <span class="text-xs text-slate-300 font-medium">${escapeHtml(schedule.title)}</span>
+                                <span class="text-xs text-slate-500">${escapeHtml(schedule.date)} ${escapeHtml(schedule.time)}</span>
+                            </div>
+                            <div class="flex items-center gap-4 mb-2">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" class="custom-check completed-check" data-id="${escapeHtml(id)}" ${item.completed ? 'checked' : ''}>
+                                    <span class="text-xs text-slate-300">标记为已完成</span>
+                                </label>
+                            </div>
+                            <input type="text" class="w-full text-xs note-input py-1.5 px-3" data-id="${escapeHtml(id)}"
+                                placeholder="添加备注（可选）" value="${escapeHtml(item.note)}">
+                        </div>
+                        <button class="remove-btn flex-shrink-0 text-slate-500 hover:text-red-400 transition-colors p-1" data-id="${escapeHtml(id)}" title="移除">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
+                `;
+
+                row.querySelector('.completed-check').addEventListener('change', (e) => {
+                    const data = selected.get(id);
+                    if (data) data.completed = e.target.checked;
+                    updateJsonPreview();
+                });
+
+                row.querySelector('.note-input').addEventListener('input', (e) => {
+                    const data = selected.get(id);
+                    if (data) data.note = e.target.value;
+                    updateJsonPreview();
+                });
+
+                row.querySelector('.remove-btn').addEventListener('click', () => {
+                    selected.delete(id);
+                    renderResults();
+                    renderSelectedPanel();
+                });
+
+                selectedList.appendChild(row);
+            });
+
+            updateJsonPreview();
+        }
+
+        function updateJsonPreview() {
+            if (jsonPreview.classList.contains('hidden')) return;
+            const patchData = buildPatchData();
+            jsonPreview.textContent = JSON.stringify(patchData, null, 2);
+        }
+
+        function buildPatchData() {
+            const patches = [];
+            selected.forEach((item) => {
+                const patch = {
+                    id: item.schedule.id,
+                    completed: item.completed,
+                    note: item.note || ''
+                };
+                // Remove undefined fields
+                // All fields always present, including empty note
+                patches.push(patch);
+            });
+            return patches;
+        }
+
+        // ========== Submit ==========
+        async function submitPatch() {
+            if (selected.size === 0) {
+                showToast('请先选择至少一个日程', 'warning');
+                return;
+            }
+
+            const token = tokenInput.value.trim();
+            if (!token) {
+                showToast('请输入 GitHub Personal Access Token', 'warning');
+                tokenInput.focus();
+                return;
+            }
+
+            const patches = buildPatchData();
+            const patchDataStr = JSON.stringify(patches);
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `
+                <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                提交中...
+            `;
+
+            try {
+                const res = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/vnd.github+json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ref: 'main',
+                        inputs: {
+                            patch_data: patchDataStr
+                        }
+                    })
+                });
+
+                if (res.status === 204) {
+                    showToast('补丁已成功提交！请等待 workflow 执行完成', 'success');
+                    // Clear selection after success
+                    selected.clear();
+                    tokenInput.value = '';
+                    renderResults();
+                    renderSelectedPanel();
+                } else if (res.status === 401) {
+                    showToast('Token 无效或已过期，请检查后重试', 'error');
+                } else if (res.status === 403) {
+                    showToast('Token 权限不足，需要 repo 和 workflow 权限', 'error');
+                } else {
+                    const body = await res.text();
+                    showToast(`提交失败 (HTTP ${res.status}): ${body.slice(0, 100)}`, 'error');
+                }
+            } catch (e) {
+                showToast(`网络错误: ${e.message}`, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                    </svg>
+                    提交补丁
+                `;
+            }
+        }
+
+        // ========== Event Listeners ==========
+        searchInput.addEventListener('input', doSearch);
+        categoryFilter.addEventListener('change', doSearch);
+        typeFilter.addEventListener('change', doSearch);
+        refreshBtn.addEventListener('click', fetchSchedules);
+        clearSelection.addEventListener('click', () => {
+            selected.clear();
+            renderResults();
+            renderSelectedPanel();
+        });
+
+        togglePreview.addEventListener('click', () => {
+            const isHidden = jsonPreview.classList.contains('hidden');
+            jsonPreview.classList.toggle('hidden');
+            previewArrow.style.transform = isHidden ? 'rotate(90deg)' : '';
+            if (isHidden) updateJsonPreview();
+        });
+
+        submitBtn.addEventListener('click', submitPatch);
+
+        // ========== Init ==========
+        fetchSchedules();
+    </script>
+</body>
+</html>
