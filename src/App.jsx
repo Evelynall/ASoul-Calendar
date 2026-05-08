@@ -92,11 +92,54 @@ function App() {
     });
     const [links, setLinks] = useState(() => {
         const saved = localStorage.getItem(LINKS_KEY);
+        // 5条录播默认链接，用于迁移补充
+        const replayLinks = [
+            {
+                id: 'default-replay-1',
+                title: '贝拉录播',
+                description: '贝拉直播录播合集',
+                url: 'https://space.bilibili.com/672353429/lists/222938?type=series',
+                icon: 'bilibili'
+            },
+            {
+                id: 'default-replay-2',
+                title: '嘉然录播',
+                description: '嘉然直播录播合集',
+                url: 'https://space.bilibili.com/672328094/lists/222940?type=series',
+                icon: 'bilibili'
+            },
+            {
+                id: 'default-replay-3',
+                title: '乃琳录播',
+                description: '乃琳直播录播合集',
+                url: 'https://space.bilibili.com/672342685/lists/222754?type=series',
+                icon: 'bilibili'
+            },
+            {
+                id: 'default-replay-4',
+                title: '心宜录播',
+                description: '心宜直播录播合集',
+                url: 'https://space.bilibili.com/3537115310721181/lists/3698069?type=series',
+                icon: 'bilibili'
+            },
+            {
+                id: 'default-replay-5',
+                title: '思诺录播',
+                description: '思诺直播录播合集',
+                url: 'https://space.bilibili.com/3537115310721781/lists/3692011?type=series',
+                icon: 'bilibili'
+            }
+        ];
         if (saved) {
-            return JSON.parse(saved);
+            const existing = JSON.parse(saved);
+            const existingIds = new Set(existing.map(l => l.id));
+            const toAdd = replayLinks.filter(l => !existingIds.has(l.id));
+            // 若有缺失的录播链接，补充到最前面
+            return toAdd.length > 0 ? [...toAdd, ...existing] : existing;
         }
         // 默认链接
         return [
+            ...replayLinks,
             {
                 id: 'default-1',
                 title: 'A-SOUL官方账号',
