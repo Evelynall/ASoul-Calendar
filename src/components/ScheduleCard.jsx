@@ -20,6 +20,11 @@ const ScheduleCard = ({
     const liveRoomUrl = item.liveRoomUrl || LIVE_ROOM_URLS[item.category];
     const config = getMemberConfig(item.category, displayMode, liveRoomUrl);
 
+    // 外部链接跳转：直接用 window.open，和 test.html 完全一致
+    const openExternalUrl = (url) => {
+        window.open(url, '_blank');
+    };
+
     // 生成渐变背景样式
     const getBackgroundStyle = () => {
         if (displayMode === 'multi-color' && config.multiColors && config.multiColors.length > 1) {
@@ -87,29 +92,15 @@ const ScheduleCard = ({
                                 </button>
                             );
                         })()}
-                        {item.link && <button title="跳转链接" className="p-1 bg-black/5 hover:bg-black/10 rounded-full"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                // 检查链接是否为 bilibili.com 域名
-                                const isBilibili = item.link.includes('bilibili.com');
-                                if (!isBilibili) {
-                                    setExternalLinkModal({ isOpen: true, url: item.link });
-                                } else {
-                                    window.open(item.link, '_blank');
-                                }
-                            }}>
+                        {item.link && <a href={item.link} target="_blank" rel="noopener noreferrer" title="跳转链接"
+                            className="p-1 bg-black/5 hover:bg-black/10 rounded-full"
+                            onClick={(e) => e.stopPropagation()}>
                             <Icon name="external-link" className="w-3 h-3" />
-                        </button>}
+                        </a>}
                         {!item.isAnime && item.officialRecordUrl && item.officialRecordUrl.trim() && <button title="观看官方录播"
                             className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
                                 e.stopPropagation();
-                                const a = document.createElement('a');
-                                a.href = item.officialRecordUrl;
-                                a.target = '_blank';
-                                a.rel = 'noopener noreferrer';
-                                document.body.appendChild(a);
-                                a.click();
-                                document.body.removeChild(a);
+                                openExternalUrl(item.officialRecordUrl);
                             }}>
                             <Icon name="bilibili" className="w-3 h-3" />
                         </button>}

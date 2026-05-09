@@ -41,3 +41,42 @@
   cursor: pointer;
   width: 100%;
 }
+
+/* 更新日志中的链接样式 */
+.changelog-link a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.changelog-link a:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.dark .changelog-link a {
+  color: #60a5fa;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.dark .changelog-link a:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+/* 更新日志通知动画 */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}

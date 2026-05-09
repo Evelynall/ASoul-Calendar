@@ -47,7 +47,7 @@ const ChangelogItem = ({ version, date, type, changes }) => {
                                 <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
                                     {changeType.label}:
                                 </span>
-                                <span className="text-sm ml-2">{change.text}</span>
+                                <span className="text-sm ml-2 changelog-link" dangerouslySetInnerHTML={{ __html: change.text }} />
                             </div>
                         </div>
                     );

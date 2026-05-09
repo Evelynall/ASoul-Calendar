@@ -1,4 +1,4 @@
-﻿import { useState, useMemo, useEffect, useRef } from 'react';
+﻿import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 import { getSupabaseConfig, saveSupabaseConfig, isUsingDefaultConfig } from './supabaseClient';
 import { getSyncId, saveSyncId, uploadToSupabase, downloadFromSupabase, canSync, getTimeUntilNextSync } from './supabaseSync';
@@ -10,6 +10,7 @@ import ScheduleCard from './components/ScheduleCard';
 import ChangelogView from './components/ChangelogView';
 import LinksView from './components/LinksView';
 import NetworkStatus from './components/NetworkStatus';
+import ChangelogNotification, { markChangelogAsRead } from './components/ChangelogNotification';
 import { parseICS, syncIcsCalendars } from './services/icsParser';
 import {
     extractUserData,
@@ -234,6 +235,13 @@ function App() {
         url: ''
     });
 
+    // URL 参数设置链接：候选日程选择弹窗状态
+    const [setLinkCandidateModal, setSetLinkCandidateModal] = useState({
+        isOpen: false,
+        candidates: [],   // 候选日程列表
+        pendingLink: ''   // 待写入的链接
+    });
+
     const fileInputRef = useRef(null);
 
     // 加载并合并基础日程库和用户数据
@@ -449,6 +457,128 @@ function App() {
             console.error('[备份] IndexedDB 备份失败:', err);
         });
     }, [schedules]);
+
+    // 处理 URL 参数：?set_link=<scheduleId>&link=<encodedUrl>
+    // 用于通过外部链接为指定日程添加跳转链接
+    // ID 格式：20260504-0900-bella@asoul.love（日期-时间-标识符）
+    // 支持时间部分模糊匹配：0900 → 匹配 09xx；0000 或多候选 → 弹窗让用户选择
+
+    // 将链接写入指定日程并跳转视图（可复用）
+    const applyScheduleLink = useCallback((targetSchedule, decodedLink) => {
+        setSchedules(prev => prev.map(s =>
+            s.id === targetSchedule.id ? { ...s, link: decodedLink } : s
+        ));
+        const scheduleDate = targetSchedule.date;
+        const isCalendarSchedule = scheduleDate && scheduleDate !== '追番/追番';
+        if (isCalendarSchedule) {
+            setCurrentDate(toZeroDate(scheduleDate));
+            setView('calendar');
+        } else {
+            setView('anime');
+        }
+        alert(`已成功为日程「${targetSchedule.title || targetSchedule.subTitle}」设置链接：\n\n${decodedLink}`);
+    }, []);
+
+    const urlParamHandledRef = useRef(false);
+    useEffect(() => {
+        // 等待数据加载完成，且只处理一次
+        if (isLoadingBase || schedules.length === 0 || urlParamHandledRef.current) return;
+
+        const params = new URLSearchParams(window.location.search);
+        const targetId = params.get('set_link');
+        const rawLink = params.get('link');
+
+        if (!targetId || !rawLink) return;
+
+        // 标记为已处理，防止 schedules 状态更新后再次触发
+        urlParamHandledRef.current = true;
+
+        // 清除 URL 参数，避免刷新后重复触发
+        window.history.replaceState({}, '', window.location.pathname);
+
+        // 解码链接
+        let decodedLink;
+        try {
+            decodedLink = decodeURIComponent(rawLink);
+        } catch {
+            decodedLink = rawLink;
+        }
+
+        // 验证链接格式
+        if (!decodedLink.startsWith('http://') && !decodedLink.startsWith('https://')) {
+            alert(`URL 参数错误：链接格式无效，必须以 http:// 或 https:// 开头。\n\n收到的链接：${decodedLink}`);
+            return;
+        }
+
+        // ── 第一步：精确匹配 ──────────────────────────────────────────────
+        const exactMatch = schedules.find(s => s.id === targetId);
+        if (exactMatch) {
+            applyScheduleLink(exactMatch, decodedLink);
+            return;
+        }
+
+        // ── 第二步：模糊匹配（ID 格式：日期-时间-标识符）────────────────────
+        // 解析传入 ID 的三个部分
+        // 例：20260504-0900-bella@asoul.love → ['20260504', '0900', 'bella@asoul.love']
+        // 标识符部分可能含 @ 或 - ，切割时只切前两个 -
+        const idParts = targetId.split('-');
+        if (idParts.length < 3) {
+            alert(`未找到 ID 为「${targetId}」的日程，且该 ID 格式无法进行模糊匹配。`);
+            return;
+        }
+        const [datePart, timePart, ...restParts] = idParts;
+        const identPart = restParts.join('-'); // 标识符（可能含 -）
+
+        // 先按日期 + 标识符过滤出候选范围
+        const sameGroupSchedules = schedules.filter(s => {
+            const sParts = s.id.split('-');
+            if (sParts.length < 3) return false;
+            const [sDate, , ...sRestParts] = sParts;
+            const sIdent = sRestParts.join('-');
+            return sDate === datePart && sIdent === identPart;
+        });
+
+        if (sameGroupSchedules.length === 0) {
+            alert(`未找到 ID 为「${targetId}」的日程。\n\n日期「${datePart}」+ 标识符「${identPart}」的日程不存在，请检查 ID 是否正确。`);
+            return;
+        }
+
+        // ── 第三步：时间部分匹配策略 ─────────────────────────────────────
+        // 情况 A：时间为 0000，或同组日程多于 1 个 → 直接弹窗候选列表
+        // 情况 B：传入时间有具体小时（非 0000），同组只有 1 个 → 直接匹配（忽略分钟差异）
+        //        同组有多个但只有 1 个匹配小时前缀 → 直接匹配
+        //        同组有多个且多个匹配小时前缀 → 弹窗候选列表
+
+        const hourPrefix = timePart.slice(0, 2); // 取小时部分，如 "0900" → "09"
+        const isTimeUnknown = timePart === '0000';
+
+        if (isTimeUnknown) {
+            // 时间未知，若同组只有一个日程则直接匹配，否则弹窗让用户选择
+            if (sameGroupSchedules.length === 1) {
+                applyScheduleLink(sameGroupSchedules[0], decodedLink);
+            } else {
+                setSetLinkCandidateModal({ isOpen: true, candidates: sameGroupSchedules, pendingLink: decodedLink });
+            }
+            return;
+        }
+
+        // 在同组内按小时前缀进一步筛选
+        const hourMatches = sameGroupSchedules.filter(s => {
+            const sTimePart = s.id.split('-')[1] || '';
+            return sTimePart.startsWith(hourPrefix);
+        });
+
+        if (hourMatches.length === 1) {
+            // 唯一匹配，直接应用
+            applyScheduleLink(hourMatches[0], decodedLink);
+        } else if (hourMatches.length > 1) {
+            // 同小时内有多个日程，弹窗让用户选择
+            setSetLinkCandidateModal({ isOpen: true, candidates: hourMatches, pendingLink: decodedLink });
+        } else {
+            // 小时也没有匹配上，回退到同组全部候选
+            setSetLinkCandidateModal({ isOpen: true, candidates: sameGroupSchedules, pendingLink: decodedLink });
+        }
+    }, [isLoadingBase, schedules, applyScheduleLink]);
 
     useEffect(() => {
         localStorage.setItem(ICS_CONFIG_KEY, JSON.stringify(icsUrls));
@@ -2402,7 +2532,14 @@ function App() {
                                 </button>
                                 <button
                                     onClick={() => {
-                                        window.open(externalLinkModal.url, '_blank');
+                                        // 使用 a 标签方式打开，确保 URL 参数正确传递
+                                        const a = document.createElement('a');
+                                        a.href = externalLinkModal.url;
+                                        a.target = '_blank';
+                                        a.rel = 'noopener noreferrer';
+                                        document.body.appendChild(a);
+                                        a.click();
+                                        document.body.removeChild(a);
                                         setExternalLinkModal({ isOpen: false, url: '' });
                                     }}
                                     className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg transition-colors"
@@ -2410,6 +2547,80 @@ function App() {
                                     继续访问
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* URL 参数设置链接：候选日程选择弹窗 */}
+                {setLinkCandidateModal.isOpen && (
+                    <div
+                        className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[110] p-4"
+                        onClick={() => setSetLinkCandidateModal({ isOpen: false, candidates: [], pendingLink: '' })}
+                    >
+                        <div
+                            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full p-6 border dark:border-slate-800"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+                                    <Icon name="link" className="w-5 h-5 text-blue-500" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">找到多个匹配日程</h3>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">请选择要设置链接的目标日程</p>
+                                </div>
+                            </div>
+
+                            <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl mb-4">
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">待设置的链接：</p>
+                                <p className="text-xs font-mono text-slate-700 dark:text-slate-300 break-all leading-relaxed">
+                                    {setLinkCandidateModal.pendingLink}
+                                </p>
+                            </div>
+
+                            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                                {setLinkCandidateModal.candidates.map(s => {
+                                    const timeStr = s.id.split('-')[1] || '';
+                                    const displayTime = timeStr.length === 4
+                                        ? `${timeStr.slice(0, 2)}:${timeStr.slice(2)}`
+                                        : timeStr;
+                                    return (
+                                        <button
+                                            key={s.id}
+                                            onClick={() => {
+                                                applyScheduleLink(s, setLinkCandidateModal.pendingLink);
+                                                setSetLinkCandidateModal({ isOpen: false, candidates: [], pendingLink: '' });
+                                            }}
+                                            className="w-full text-left p-3 rounded-xl border border-slate-200 dark:border-slate-700
+                                                hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20
+                                                transition-colors group"
+                                        >
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">
+                                                        {s.title || s.subTitle || '（无标题）'}
+                                                    </p>
+                                                    {s.title && s.subTitle && (
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{s.subTitle}</p>
+                                                    )}
+                                                </div>
+                                                <span className="shrink-0 text-xs font-mono text-blue-500 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-lg">
+                                                    {displayTime}
+                                                </span>
+                                            </div>
+                                            <p className="text-[10px] text-slate-400 dark:text-slate-600 mt-1 font-mono truncate">{s.id}</p>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            <button
+                                onClick={() => setSetLinkCandidateModal({ isOpen: false, candidates: [], pendingLink: '' })}
+                                className="mt-4 w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700
+                                    rounded-xl text-sm font-bold text-slate-600 dark:text-slate-400 transition-colors"
+                            >
+                                取消
+                            </button>
                         </div>
                     </div>
                 )}
@@ -2435,6 +2646,7 @@ function App() {
                             <a
                                 onClick={(e) => {
                                     e.preventDefault(); // 阻止<a>标签的默认跳转行为
+                                    markChangelogAsRead(); // 标记已读
                                     setView('changelog'); // 执行你的逻辑
                                 }}
                                 className="text-blue-600 dark:text-blue-400 hover:underline ml-1"
@@ -2445,6 +2657,9 @@ function App() {
                         </span>
                     </div>
                 </footer>
+                
+                {/* 重大更新通知 */}
+                <ChangelogNotification onOpenChangelog={() => { markChangelogAsRead(); setView('changelog'); }} />
             </div>
         </>
     );

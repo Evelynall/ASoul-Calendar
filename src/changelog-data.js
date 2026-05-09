@@ -1,6 +1,16 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.3.0',
+        date: '2026-05-09',
+        type: 'major', // major, minor, patch
+        changes: [
+            { type: 'feature', text: '添加链接参数，可通过https://www.evelynal.top/ASoul-Calendar/?set_link=[日程id]&link=[链接]的格式为日程添加跳转链接' },
+            { type: 'feature', text: '新增对应的篡改猴脚本<a href="https://greasyfork.org/zh-CN/scripts/577237-%E6%9E%9D%E6%B1%9F%E8%BF%BD%E7%95%AA%E8%A1%A8%E8%BF%9B%E5%BA%A6%E4%BF%9D%E5%AD%98%E8%84%9A%E6%9C%AC">枝江追番表进度保存脚本</a>，在录播视频标题将会显示一个按钮，用于快捷保存观看进度至对应日程' },
+            { type: 'feature', text: '修复了大多数情况下部分视频(特别是官方录播)跳转时显示视频已失效的问题' },
+            { type: 'feature', text: '一些骚扰：当有未查看的重大更新时会有一个小的弹窗提示' }
+        ]
+    }, {
         version: '1.2.8',
         date: '2026-05-08',
         type: 'minor', // major, minor, patch
