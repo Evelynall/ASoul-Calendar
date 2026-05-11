@@ -97,13 +97,12 @@ const ScheduleCard = ({
                             onClick={(e) => e.stopPropagation()}>
                             <Icon name="external-link" className="w-3 h-3" />
                         </a>}
-                        {!item.isAnime && item.officialRecordUrl && item.officialRecordUrl.trim() && <button title="观看官方录播"
-                            className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
-                                e.stopPropagation();
-                                openExternalUrl(item.officialRecordUrl);
-                            }}>
+                        {!item.isAnime && item.officialRecordUrl && item.officialRecordUrl.trim() && <a
+                            href={item.officialRecordUrl} target="_blank" rel="noopener noreferrer" title="观看官方录播"
+                            className="p-1 bg-black/5 hover:bg-black/10 rounded-full"
+                            onClick={(e) => e.stopPropagation()}>
                             <Icon name="bilibili" className="w-3 h-3" />
-                        </button>}
+                        </a>}
                         {!item.isAnime && item.dynamicUrl && <button title="查看动态"
                             className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
                                 e.stopPropagation();
