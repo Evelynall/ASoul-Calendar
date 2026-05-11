@@ -1,6 +1,17 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.4.0',
+        date: '2026-05-11',
+        type: 'minor',
+        changes: [
+            { type: 'feature', text: '数据库更新录播数据，现在大部分的旧日程已包含录播地址' },
+            { type: 'feature', text: '数据库更新了自动同步录播地址的功能，现在每天晚上12点会同步一次已有的录播' },
+            { type: 'improvement', text: '更新了个性化设置，现在你可以在外观设置中选择是否显示搜索和动态按钮了' },
+            { type: 'improvement', text: '重写了录播按钮和直播按钮的显示逻辑，重新绘制了录播按钮的图标，与直播间按钮区分' }
+        ]
+    },
+    {
         version: '1.3.0',
         date: '2026-05-09',
         type: 'major', // major, minor, patch

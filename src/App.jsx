@@ -43,6 +43,8 @@ import {
     GIST_ID_KEY,
     CUSTOM_COLORS_KEY,
     LINKS_KEY,
+    SHOW_SEARCH_BTN_KEY,
+    SHOW_DYNAMIC_BTN_KEY,
     BASE_SCHEDULES_URL,
     DEFAULT_MEMBER_CONFIG,
     LIVE_ROOM_URLS
@@ -91,6 +93,8 @@ function App() {
         const saved = localStorage.getItem(CUSTOM_COLORS_KEY);
         return saved ? JSON.parse(saved) : {};
     });
+    const [showSearchBtn, setShowSearchBtn] = useState(() => localStorage.getItem(SHOW_SEARCH_BTN_KEY) !== 'false');
+    const [showDynamicBtn, setShowDynamicBtn] = useState(() => localStorage.getItem(SHOW_DYNAMIC_BTN_KEY) !== 'false');
     const [links, setLinks] = useState(() => {
         const saved = localStorage.getItem(LINKS_KEY);
         // 5条录播默认链接，用于迁移补充
@@ -1639,6 +1643,8 @@ function App() {
                                                             setTempLink={setTempLink}
                                                             setSchedules={setSchedules}
                                                             setExternalLinkModal={setExternalLinkModal}
+                                                            showSearchBtn={showSearchBtn}
+                                                            showDynamicBtn={showDynamicBtn}
                                                         />
                                                     )) : <div
                                                         className="h-24 flex items-center justify-center italic text-[10px] text-slate-300 dark:text-slate-800 border-2 border-dashed border-slate-50 dark:border-slate-900 rounded-xl">
@@ -1677,6 +1683,9 @@ function App() {
                                                 setTempNote={setTempNote}
                                                 setTempLink={setTempLink}
                                                 setSchedules={setSchedules}
+                                                setExternalLinkModal={setExternalLinkModal}
+                                                showSearchBtn={showSearchBtn}
+                                                showDynamicBtn={showDynamicBtn}
                                                 setExternalLinkModal={setExternalLinkModal}
                                             />
                                         ))
@@ -1737,6 +1746,8 @@ function App() {
                                             setTempLink={setTempLink}
                                             setSchedules={setSchedules}
                                             setExternalLinkModal={setExternalLinkModal}
+                                            showSearchBtn={showSearchBtn}
+                                            showDynamicBtn={showDynamicBtn}
                                         />
                                     ))}
                                 </div>
@@ -1800,6 +1811,48 @@ function App() {
                                         >
                                             <span
                                                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useSpecialGroupColor ? 'translate-x-6' : 'translate-x-1'}`}
+                                            />
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                        <div>
+                                            <div className="font-medium">显示搜索按钮</div>
+                                            <div className="text-xs text-slate-500">
+                                                {showSearchBtn ? '在过期日程上显示B站搜索按钮' : '已隐藏'}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                const newValue = !showSearchBtn;
+                                                setShowSearchBtn(newValue);
+                                                localStorage.setItem(SHOW_SEARCH_BTN_KEY, newValue.toString());
+                                            }}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${showSearchBtn ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
+                                        >
+                                            <span
+                                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showSearchBtn ? 'translate-x-6' : 'translate-x-1'}`}
+                                            />
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                        <div>
+                                            <div className="font-medium">显示动态按钮</div>
+                                            <div className="text-xs text-slate-500">
+                                                {showDynamicBtn ? '显示B站动态跳转按钮' : '已隐藏'}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                const newValue = !showDynamicBtn;
+                                                setShowDynamicBtn(newValue);
+                                                localStorage.setItem(SHOW_DYNAMIC_BTN_KEY, newValue.toString());
+                                            }}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${showDynamicBtn ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
+                                        >
+                                            <span
+                                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showDynamicBtn ? 'translate-x-6' : 'translate-x-1'}`}
                                             />
                                         </button>
                                     </div>

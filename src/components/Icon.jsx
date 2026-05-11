@@ -136,7 +136,21 @@ const Icon = ({ name, className = "w-4 h-4" }) => {
                 <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02" />
             </Fragment>,
         twitter:
-            <path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z" />
+            <path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z" />,
+        "record-play": (
+            <Fragment>
+                {/* 胶卷主体 */}
+                <rect x="2" y="7" width="20" height="12" rx="2" />
+                {/* 胶卷齿孔 - 左侧 */}
+                <rect x="2" y="9" width="3" height="2" rx="0.5" fill="currentColor" stroke="none" />
+                <rect x="2" y="13" width="3" height="2" rx="0.5" fill="currentColor" stroke="none" />
+                {/* 胶卷齿孔 - 右侧 */}
+                <rect x="19" y="9" width="3" height="2" rx="0.5" fill="currentColor" stroke="none" />
+                <rect x="19" y="13" width="3" height="2" rx="0.5" fill="currentColor" stroke="none" />
+                {/* 播放三角形（实心）*/}
+                <path d="M10 10.5l4.5 2.5-4.5 2.5V10.5z" fill="currentColor" stroke="none" />
+            </Fragment>
+        )
     };
     return (
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"

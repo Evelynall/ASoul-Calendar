@@ -13,6 +13,8 @@ export const GIST_TOKEN_KEY = 'asoul_gist_token';
 export const GIST_ID_KEY = 'asoul_gist_id';
 export const CUSTOM_COLORS_KEY = 'asoul_custom_colors';
 export const LINKS_KEY = 'asoul_quick_links';
+export const SHOW_SEARCH_BTN_KEY = 'asoul_show_search_btn';
+export const SHOW_DYNAMIC_BTN_KEY = 'asoul_show_dynamic_btn';
 
 // 基础日程库的 GitHub 地址 - 优先使用 gh-proxy 代理（实时数据，无CDN缓存延迟）
 export const BASE_SCHEDULES_URL = 'https://gh-proxy.org/https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json';

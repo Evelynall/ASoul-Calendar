@@ -13,7 +13,9 @@ const ScheduleCard = ({
     setTempNote,
     setTempLink,
     setSchedules,
-    setExternalLinkModal
+    setExternalLinkModal,
+    showSearchBtn = true,
+    showDynamicBtn = true
 }) => {
     const displayMode = localStorage.getItem(DISPLAY_MODE_KEY) || 'multi-color';
     // 获取直播间URL（优先级：ICS直播间URL > 预定义直播间URL）
@@ -76,41 +78,43 @@ const ScheduleCard = ({
                         <Icon name="check-circle-2" className="w-3.5 h-3.5 text-green-400" />}
                     <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         {!item.isAnime && (() => {
+                            // 用户自定义了 link 时不显示直播/录播按钮
+                            if (item.link && item.link.trim()) return null;
+
                             // 优先级：ICS直播间URL > 预定义直播间URL
                             const liveRoomUrl = item.liveRoomUrl || LIVE_ROOM_URLS[item.category];
+                            const hasOfficialRecord = item.officialRecordUrl && item.officialRecordUrl.trim();
 
-                            // 判断日程日期是否为今天或未来
-                            const scheduleDate = toZeroDate(item.date);
-                            const today = toZeroDate();
-                            const isFutureOrToday = scheduleDate >= today;
-
-                            return liveRoomUrl && isFutureOrToday && (
-                                <button title="进入直播间" className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
+                            if (hasOfficialRecord) {
+                                // 有官方录播时显示录播按钮
+                                return <a href={item.officialRecordUrl} target="_blank" rel="noopener noreferrer" title="观看官方录播"
+                                    className="p-1 bg-black/5 hover:bg-black/10 rounded-full"
+                                    onClick={(e) => e.stopPropagation()}>
+                                    <Icon name="record-play" className="w-3 h-3" />
+                                </a>;
+                            } else if (liveRoomUrl) {
+                                // 无官方录播时显示直播间按钮
+                                return <button title="进入直播间" className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
                                     e.stopPropagation(); window.open(liveRoomUrl, '_blank');
                                 }}>
                                     <Icon name="bilibili" className="w-3 h-3" />
-                                </button>
-                            );
+                                </button>;
+                            }
+                            return null;
                         })()}
                         {item.link && <a href={item.link} target="_blank" rel="noopener noreferrer" title="跳转链接"
                             className="p-1 bg-black/5 hover:bg-black/10 rounded-full"
                             onClick={(e) => e.stopPropagation()}>
                             <Icon name="external-link" className="w-3 h-3" />
                         </a>}
-                        {!item.isAnime && item.officialRecordUrl && item.officialRecordUrl.trim() && <a
-                            href={item.officialRecordUrl} target="_blank" rel="noopener noreferrer" title="观看官方录播"
-                            className="p-1 bg-black/5 hover:bg-black/10 rounded-full"
-                            onClick={(e) => e.stopPropagation()}>
-                            <Icon name="bilibili" className="w-3 h-3" />
-                        </a>}
-                        {!item.isAnime && item.dynamicUrl && <button title="查看动态"
+                        {showDynamicBtn && !item.isAnime && item.dynamicUrl && <button title="查看动态"
                             className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
                                 e.stopPropagation();
                                 window.open(item.dynamicUrl, '_blank');
                             }}>
                             <Icon name="link" className="w-3 h-3" />
                         </button>}
-                        {!item.isAnime && (() => {
+                        {showSearchBtn && !item.isAnime && (() => {
                             // 判断日程日期是否为今天或过去
                             const scheduleDate = toZeroDate(item.date);
                             const today = toZeroDate();
