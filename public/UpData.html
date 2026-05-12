@@ -295,7 +295,7 @@
         // ========== State ==========
         let allSchedules = [];
         let searchResults = [];
-        let selected = new Map(); // id -> { schedule, completed, note }
+        let selected = new Map(); // id -> { schedule, completed, note, officialRecordUrl }
 
         // ========== DOM Elements ==========
         const $ = (sel) => document.querySelector(sel);
@@ -501,7 +501,7 @@
             if (selected.has(schedule.id)) {
                 selected.delete(schedule.id);
             } else {
-                selected.set(schedule.id, { schedule, completed: false, note: '' });
+                selected.set(schedule.id, { schedule, completed: false, note: '', officialRecordUrl: schedule.officialRecordUrl || '' });
             }
             renderResults();
             renderSelectedPanel();
@@ -536,8 +536,10 @@
                                     <span class="text-xs text-slate-300">标记为已完成</span>
                                 </label>
                             </div>
-                            <input type="text" class="w-full text-xs note-input py-1.5 px-3" data-id="${escapeHtml(id)}"
+                            <input type="text" class="w-full text-xs note-input py-1.5 px-3 mb-2" data-id="${escapeHtml(id)}"
                                 placeholder="添加备注（可选）" value="${escapeHtml(item.note)}">
+                            <input type="text" class="w-full text-xs url-input py-1.5 px-3" data-id="${escapeHtml(id)}"
+                                placeholder="录播链接（可选）" value="${escapeHtml(item.officialRecordUrl)}">
                         </div>
                         <button class="remove-btn flex-shrink-0 text-slate-500 hover:text-red-400 transition-colors p-1" data-id="${escapeHtml(id)}" title="移除">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -556,6 +558,12 @@
                 row.querySelector('.note-input').addEventListener('input', (e) => {
                     const data = selected.get(id);
                     if (data) data.note = e.target.value;
+                    updateJsonPreview();
+                });
+
+                row.querySelector('.url-input').addEventListener('input', (e) => {
+                    const data = selected.get(id);
+                    if (data) data.officialRecordUrl = e.target.value;
                     updateJsonPreview();
                 });
 
@@ -583,7 +591,8 @@
                 const patch = {
                     id: item.schedule.id,
                     completed: item.completed,
-                    note: item.note || ''
+                    note: item.note || '',
+                    officialRecordUrl: item.officialRecordUrl || ''
                 };
                 // Remove undefined fields
                 // All fields always present, including empty note
