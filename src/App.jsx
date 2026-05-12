@@ -488,8 +488,9 @@ function App() {
     // 自动同步触发函数
     const triggerAutoSync = useCallback(async () => {
         const userData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
+        let anySyncSuccess = false;
 
-        // 优先使用 Supabase 自动同步（如果已配置）
+        // 同步到 Supabase（如果已配置）
         if (supabaseAutoSync && supabaseUrl && supabaseKey && syncId) {
             try {
                 console.log('[自动同步] 正在上传到 Supabase...');
@@ -497,14 +498,13 @@ function App() {
                 setAutoSyncToastMessage('Supabase 自动同步成功');
                 setShowAutoSyncToast(true);
                 console.log('[云同步] Supabase 云同步成功');
-                setTimeout(() => setShowAutoSyncToast(false), 3000);
-                return true;
+                anySyncSuccess = true;
             } catch (err) {
                 console.error('[自动同步] Supabase 同步失败:', err);
             }
         }
 
-        // 其次使用 Gist 自动同步（如果已配置）
+        // 同步到 Gist（如果已配置）
         if (gistAutoSync && gistToken) {
             try {
                 console.log('[自动同步] 正在上传到 GitHub Gist...');
@@ -515,14 +515,18 @@ function App() {
                 setAutoSyncToastMessage('Gist 自动同步成功');
                 setShowAutoSyncToast(true);
                 console.log('[云同步] GitHub Gist 云同步成功');
-                setTimeout(() => setShowAutoSyncToast(false), 3000);
-                return true;
+                anySyncSuccess = true;
             } catch (err) {
                 console.error('[自动同步] Gist 同步失败:', err);
             }
         }
 
-        return false;
+        // 如果有同步成功，3秒后隐藏提示
+        if (anySyncSuccess) {
+            setTimeout(() => setShowAutoSyncToast(false), 3000);
+        }
+
+        return anySyncSuccess;
     }, [supabaseAutoSync, supabaseUrl, supabaseKey, syncId, gistAutoSync, gistToken, gistId]);
 
     // 安排自动同步（用户操作后调用）

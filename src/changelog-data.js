@@ -1,6 +1,14 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.5.1',
+        date: '2026-05-12',
+        type: 'patch',
+        changes: [
+            { type: 'improvement', text: '优化自动同步逻辑' }
+        ]
+    },
+    {
         version: '1.5.0',
         date: '2026-05-12',
         type: 'minor',

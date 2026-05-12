@@ -8,6 +8,9 @@ const DEFAULT_SUPABASE_KEY = 'sb_publishable__0It3s_EGA0JLjYDicxGjw_k94IhQVe';
 const SUPABASE_URL_KEY = 'asoul_supabase_url';
 const SUPABASE_ANON_KEY = 'asoul_supabase_anon_key';
 
+// 单例缓存
+let supabaseInstance = null;
+
 // 获取配置（优先使用用户自定义配置，否则使用默认配置）
 export const getSupabaseConfig = () => {
     const customUrl = localStorage.getItem(SUPABASE_URL_KEY);
@@ -43,6 +46,9 @@ export const saveSupabaseConfig = (url, key) => {
     } else {
         localStorage.removeItem(SUPABASE_ANON_KEY);
     }
+
+    // 配置改变时重置单例
+    supabaseInstance = null;
 };
 
 // 检查是否使用默认配置
@@ -51,13 +57,19 @@ export const isUsingDefaultConfig = () => {
     return !isCustom;
 };
 
-// 创建 Supabase 客户端
+// 创建 Supabase 客户端（单例模式）
 export const createSupabaseClient = () => {
+    // 如果已存在实例且配置未改变，直接返回
+    if (supabaseInstance) {
+        return supabaseInstance;
+    }
+
     const { url, key } = getSupabaseConfig();
 
     if (!url || !key) {
         return null;
     }
 
-    return createClient(url, key);
+    supabaseInstance = createClient(url, key);
+    return supabaseInstance;
 };
