@@ -1,4 +1,4 @@
-﻿import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 import { getSupabaseConfig, saveSupabaseConfig, isUsingDefaultConfig } from './supabaseClient';
 import { getSyncId, saveSyncId, uploadToSupabase, downloadFromSupabase, canSync, getTimeUntilNextSync } from './supabaseSync';
@@ -45,6 +45,8 @@ import {
     LINKS_KEY,
     SHOW_SEARCH_BTN_KEY,
     SHOW_DYNAMIC_BTN_KEY,
+    GIST_AUTO_SYNC_KEY,
+    SUPABASE_AUTO_SYNC_KEY,
     BASE_SCHEDULES_URL,
     DEFAULT_MEMBER_CONFIG,
     LIVE_ROOM_URLS
@@ -89,6 +91,12 @@ function App() {
     const [gistToken, setGistToken] = useState(() => localStorage.getItem(GIST_TOKEN_KEY) || '');
     const [gistId, setGistId] = useState(() => localStorage.getItem(GIST_ID_KEY) || '');
     const [isGistSyncing, setIsGistSyncing] = useState(false);
+    const [gistAutoSync, setGistAutoSync] = useState(() => localStorage.getItem(GIST_AUTO_SYNC_KEY) === 'true');
+    const [gistAutoSyncPending, setGistAutoSyncPending] = useState(false);
+    const [supabaseAutoSync, setSupabaseAutoSync] = useState(() => localStorage.getItem(SUPABASE_AUTO_SYNC_KEY) === 'true');
+    const [supabaseAutoSyncPending, setSupabaseAutoSyncPending] = useState(false);
+    const [showAutoSyncToast, setShowAutoSyncToast] = useState(false);
+    const [autoSyncToastMessage, setAutoSyncToastMessage] = useState('');
     const [customColors, setCustomColors] = useState(() => {
         const saved = localStorage.getItem(CUSTOM_COLORS_KEY);
         return saved ? JSON.parse(saved) : {};
@@ -462,6 +470,103 @@ function App() {
         });
     }, [schedules]);
 
+    // 自动同步相关状态
+    const isInitializedRef = useRef(false);
+    const autoSyncTimerRef = useRef(null);
+    const pendingAutoSyncRef = useRef(null);
+    const skipNextSyncRef = useRef(false);
+
+    // 标记初始化完成
+    useEffect(() => {
+        if (!isLoadingBase && schedules.length > 0 && !isInitializedRef.current) {
+            isInitializedRef.current = true;
+            skipNextSyncRef.current = true;
+            console.log('[初始化] 页面数据加载完成，已标记为初始化状态');
+        }
+    }, [isLoadingBase, schedules]);
+
+    // 自动同步触发函数
+    const triggerAutoSync = useCallback(async () => {
+        const userData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
+
+        // 优先使用 Supabase 自动同步（如果已配置）
+        if (supabaseAutoSync && supabaseUrl && supabaseKey && syncId) {
+            try {
+                console.log('[自动同步] 正在上传到 Supabase...');
+                await uploadToSupabase(userData, syncId);
+                setAutoSyncToastMessage('Supabase 自动同步成功');
+                setShowAutoSyncToast(true);
+                console.log('[云同步] Supabase 云同步成功');
+                setTimeout(() => setShowAutoSyncToast(false), 3000);
+                return true;
+            } catch (err) {
+                console.error('[自动同步] Supabase 同步失败:', err);
+            }
+        }
+
+        // 其次使用 Gist 自动同步（如果已配置）
+        if (gistAutoSync && gistToken) {
+            try {
+                console.log('[自动同步] 正在上传到 GitHub Gist...');
+                const result = await uploadToGist(gistToken, gistId, userData);
+                if (result.gistId && !gistId) {
+                    setGistId(result.gistId);
+                }
+                setAutoSyncToastMessage('Gist 自动同步成功');
+                setShowAutoSyncToast(true);
+                console.log('[云同步] GitHub Gist 云同步成功');
+                setTimeout(() => setShowAutoSyncToast(false), 3000);
+                return true;
+            } catch (err) {
+                console.error('[自动同步] Gist 同步失败:', err);
+            }
+        }
+
+        return false;
+    }, [supabaseAutoSync, supabaseUrl, supabaseKey, syncId, gistAutoSync, gistToken, gistId]);
+
+    // 安排自动同步（用户操作后调用）
+    const scheduleAutoSync = useCallback(() => {
+        if (!isInitializedRef.current) {
+            return; // 初始化阶段不触发自动同步
+        }
+
+        if (skipNextSyncRef.current) {
+            skipNextSyncRef.current = false;
+            console.log('[自动同步] 跳过首次操作同步');
+            return; // 跳过第一次操作
+        }
+
+        // 清除之前的定时器
+        if (autoSyncTimerRef.current) {
+            clearTimeout(autoSyncTimerRef.current);
+        }
+
+        // 判断当前应该等待的时间
+        const isFirstAction = pendingAutoSyncRef.current === null;
+        const waitTime = isFirstAction ? 60000 : 180000; // 首次1分钟，后续3分钟
+        pendingAutoSyncRef.current = true;
+
+        console.log(`[自动同步] 已安排${waitTime / 1000}秒后触发同步`);
+
+        autoSyncTimerRef.current = setTimeout(async () => {
+            const success = await triggerAutoSync();
+            if (success) {
+                pendingAutoSyncRef.current = null;
+            } else {
+                // 如果同步失败（未配置），清除待处理状态
+                pendingAutoSyncRef.current = null;
+            }
+        }, waitTime);
+    }, [triggerAutoSync]);
+
+    // 监听用户操作触发自动同步
+    useEffect(() => {
+        if (!isInitializedRef.current || schedules.length === 0) return;
+
+        scheduleAutoSync();
+    }, [schedules]);
+
     // 处理 URL 参数：?set_link=<scheduleId>&link=<encodedUrl>
     // 用于通过外部链接为指定日程添加跳转链接
     // ID 格式：20260504-0900-bella@asoul.love（日期-时间-标识符）
@@ -629,6 +734,15 @@ function App() {
             saveSyncId(syncId);
         }
     }, [syncId]);
+
+    // 保存自动同步开关状态
+    useEffect(() => {
+        localStorage.setItem(GIST_AUTO_SYNC_KEY, gistAutoSync.toString());
+    }, [gistAutoSync]);
+
+    useEffect(() => {
+        localStorage.setItem(SUPABASE_AUTO_SYNC_KEY, supabaseAutoSync.toString());
+    }, [supabaseAutoSync]);
 
     // 更新同步冷却时间
     useEffect(() => {
@@ -1364,6 +1478,12 @@ function App() {
                     <button onClick={() => setFetchError(false)} className="text-white/80 hover:text-white text-lg leading-none">×</button>
                 </div>
             )}
+            {showAutoSyncToast && (
+                <div className="fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg bg-green-500 text-white flex items-center gap-3 animate-pulse">
+                    <Icon name="check-circle-2" className="w-5 h-5" />
+                    <span>{autoSyncToastMessage}</span>
+                </div>
+            )}
             <div className="flex flex-col h-screen transition-colors duration-300 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100">
                 <header
                     className="border-b px-4 md:px-6 py-3 flex items-center justify-between shadow-sm shrink-0 bg-white dark:bg-slate-900 dark:border-slate-800 gap-4 text-slate-900 dark:text-slate-100">
@@ -1686,7 +1806,6 @@ function App() {
                                                 setExternalLinkModal={setExternalLinkModal}
                                                 showSearchBtn={showSearchBtn}
                                                 showDynamicBtn={showDynamicBtn}
-                                                setExternalLinkModal={setExternalLinkModal}
                                             />
                                         ))
                                     }
@@ -2192,6 +2311,21 @@ function App() {
                                         />
                                     </div>
 
+                                    <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                                        <div>
+                                            <div className="font-medium text-sm">自动云同步</div>
+                                            <div className="text-xs text-slate-500">用户操作后自动同步到云端</div>
+                                        </div>
+                                        <button
+                                            onClick={() => setGistAutoSync(!gistAutoSync)}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${gistAutoSync ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
+                                        >
+                                            <span
+                                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${gistAutoSync ? 'translate-x-6' : 'translate-x-1'}`}
+                                            />
+                                        </button>
+                                    </div>
+
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
                                         <button
                                             onClick={handleSyncToGist}
@@ -2316,6 +2450,21 @@ function App() {
 
                                         {showCustomConfig && (
                                             <div className="space-y-3 mt-3">
+                                                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                                                    <div>
+                                                        <div className="font-medium text-sm">自动云同步</div>
+                                                        <div className="text-xs text-slate-500">用户操作后自动同步到云端</div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setSupabaseAutoSync(!supabaseAutoSync)}
+                                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${supabaseAutoSync ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
+                                                    >
+                                                        <span
+                                                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${supabaseAutoSync ? 'translate-x-6' : 'translate-x-1'}`}
+                                                        />
+                                                    </button>
+                                                </div>
+
                                                 <div>
                                                     <label className="text-xs font-bold text-slate-500 mb-1.5 block">Supabase URL</label>
                                                     <input
@@ -2424,7 +2573,7 @@ function App() {
                                         <div className="flex items-center justify-between">
                                             <div>
                                                 <div className="font-medium text-slate-900 dark:text-slate-100">版本信息</div>
-                                                <div className="text-slate-500 dark:text-slate-400">v1.1.0</div>
+                                                <div className="text-slate-500 dark:text-slate-400">v1.1.1</div>
                                             </div>
                                             <button
                                                 onClick={() => setView('changelog')}

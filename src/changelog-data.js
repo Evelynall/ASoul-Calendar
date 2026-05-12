@@ -1,6 +1,17 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.5.0',
+        date: '2026-05-12',
+        type: 'minor',
+        changes: [
+            { type: 'feature', text: '云同步添加自动同步开关，支持 GitHub Gist 和 Supabase 自定义服务器自动云同步' },
+            { type: 'feature', text: '用户操作后自动等待并同步数据，避免频繁同步' },
+            { type: 'feature', text: '自动同步成功后右下角弹窗提示，同步状态更直观' },
+            { type: 'improvement', text: '修复了部分代码逻辑问题' }
+        ]
+    },
+    {
         version: '1.4.0',
         date: '2026-05-11',
         type: 'minor',
@@ -48,7 +59,7 @@ export const changelogData = [
         date: '2026-03-27',
         type: 'patch', // major, minor, patch
         changes: [
-            { type: 'feature', text: '优化拉取逻辑，避免中转站的缓存导致日程更新延迟' }
+            { type: 'improvement', text: '优化拉取逻辑，避免中转站的缓存导致日程更新延迟' }
         ]
     },
     {
@@ -56,7 +67,7 @@ export const changelogData = [
         date: '2026-03-18',
         type: 'patch', // major, minor, patch
         changes: [
-            { type: 'feature', text: '优化拉取逻辑，现在能更及时的收到更新日程了' }
+            { type: 'improvement', text: '优化拉取逻辑，现在能更及时的收到更新日程了' }
         ]
     },
     {
@@ -64,7 +75,7 @@ export const changelogData = [
         date: '2026-03-17',
         type: 'patch', // major, minor, patch
         changes: [
-            { type: 'feature', text: '修复了可能拉取失败的问题，提高了拉取基础数据库的频率' }
+            { type: 'improvement', text: '修复了可能拉取失败的问题，提高了拉取基础数据库的频率' }
         ]
     },
     {
@@ -72,7 +83,7 @@ export const changelogData = [
         date: '2026-03-10',
         type: 'patch', // major, minor, patch
         changes: [
-            { type: 'feature', text: '修复了组合色的部分逻辑，现在已经可以选择是否开启组合色了。' }
+            { type: 'improvement', text: '修复了组合色的部分逻辑，现在已经可以选择是否开启组合色了。' }
         ]
     },
     {
@@ -80,7 +91,7 @@ export const changelogData = [
         date: '2026-03-10',
         type: 'patch', // major, minor, patch
         changes: [
-            { type: 'feature', text: '基础日程库修改为加速链接，国内访问更稳定。感谢A-SOUL导航站运营者 @和泉-紗霧 的指导。' }
+            { type: 'improvement', text: '基础日程库修改为加速链接，国内访问更稳定。感谢A-SOUL导航站运营者 @和泉-紗霧 的指导。' }
         ]
     },
     {
@@ -96,7 +107,7 @@ export const changelogData = [
         date: '2026-03-09',
         type: 'patch', // major, minor, patch
         changes: [
-            { type: 'feature', text: '拆分了部分功能，优化了项目的可维护性(优化工程仍在持续中.ing)' }
+            { type: 'improvement', text: '拆分了部分功能，优化了项目的可维护性(优化工程仍在持续中.ing)' }
         ]
     },
     {
@@ -104,7 +115,7 @@ export const changelogData = [
         date: '2026-03-09',
         type: 'patch', // major, minor, patch
         changes: [
-            { type: 'feature', text: '用户数量比预料的要多，加强了浏览器本地数据的稳定性' }
+            { type: 'improvement', text: '用户数量比预料的要多，加强了浏览器本地数据的稳定性' }
         ]
     },
     {
