@@ -1,6 +1,15 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.5.2',
+        date: '2026-05-14',
+        type: 'patch',
+        changes: [
+            { type: 'improvement', text: '优化了页面过窄时(如手机端使用时)的显示效果' },
+            { type: 'improvement', text: '优化了部分页面' },
+            { type: 'feature', text: '页脚添加了油猴脚本的链接' }
+        ]
+    }, {
         version: '1.5.1',
         date: '2026-05-12',
         type: 'patch',

@@ -82,19 +82,21 @@ const LinksView = ({ links, setLinks }) => {
     return (
         <>
             <div className="h-full max-w-5xl mx-auto p-4 md:p-8 flex flex-col overflow-hidden text-slate-900 dark:text-slate-100">
-                <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold flex items-center gap-2">
-                        <Icon name="link" className="w-5 h-5 text-blue-500" />
-                        快捷链接 ({links.length})
-                    </h3>
-                    <p className='text-white/60 text-xs'>功能开发中，暂不支持导出与同步，数据结构可能会有变动，不建议使用自定义添加功能</p>
-                    <button
-                        onClick={() => handleOpenModal()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs md:text-sm font-bold shadow-md hover:bg-blue-700 transition-all"
-                    >
-                        <Icon name="plus" className="w-3.5 h-3.5" />
-                        <span>添加链接</span>
-                    </button>
+                <div className="mb-4">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-bold flex items-center gap-2">
+                            <Icon name="link" className="w-5 h-5 text-blue-500" />
+                            快捷链接 ({links.length})
+                        </h3>
+                        <button
+                            onClick={() => handleOpenModal()}
+                            className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs md:text-sm font-bold shadow-md hover:bg-blue-700 transition-all"
+                        >
+                            <Icon name="plus" className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">添加链接</span>
+                        </button>
+                    </div>
+                    <p className='text-white/60 text-xs mt-2'>功能开发中，暂不支持导出与同步，数据结构可能会有变动，不建议使用自定义添加功能</p>
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">

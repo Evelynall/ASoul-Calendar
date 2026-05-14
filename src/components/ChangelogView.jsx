@@ -3,7 +3,7 @@ import Icon from './Icon';
 import ChangelogItem from './ChangelogItem';
 import { changelogData } from '../changelog-data';
 
-const ChangelogView = ({ onBack }) => {
+const ChangelogView = () => {
     const [filter, setFilter] = useState('all'); // all, major, minor, patch
 
     const filteredChangelogs = filter === 'all'
@@ -14,13 +14,6 @@ const ChangelogView = ({ onBack }) => {
         <div className="max-w-4xl mx-auto">
             {/* 头部 */}
             <div className="mb-8">
-                <button
-                    onClick={onBack}
-                    className="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 mb-4 transition-colors"
-                >
-                    <Icon name="arrow-left" className="w-5 h-5" />
-                    <span>返回</span>
-                </button>
 
                 <div className="flex items-center justify-between">
                     <div>
@@ -45,8 +38,8 @@ const ChangelogView = ({ onBack }) => {
                         key={value}
                         onClick={() => setFilter(value)}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === value
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
                             }`}
                     >
                         {label}

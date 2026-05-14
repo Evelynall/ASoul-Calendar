@@ -150,6 +150,28 @@ const Icon = ({ name, className = "w-4 h-4" }) => {
                 {/* 播放三角形（实心）*/}
                 <path d="M10 10.5l4.5 2.5-4.5 2.5V10.5z" fill="currentColor" stroke="none" />
             </Fragment>
+        ),
+        "grid": (
+            <Fragment>
+                <rect width="7" height="7" x="3" y="3" rx="1" />
+                <rect width="7" height="7" x="14" y="3" rx="1" />
+                <rect width="7" height="7" x="14" y="14" rx="1" />
+                <rect width="7" height="7" x="3" y="14" rx="1" />
+            </Fragment>
+        ),
+        "tv": (
+            <Fragment>
+                <rect x="2" y="7" width="20" height="15" rx="2" ry="2" />
+                <polyline points="17 2 12 7 7 2" />
+            </Fragment>
+        ),
+        "layout-grid": (
+            <Fragment>
+                <rect width="7" height="9" x="3" y="3" rx="1" />
+                <rect width="7" height="5" x="14" y="3" rx="1" />
+                <rect width="7" height="9" x="14" y="12" rx="1" />
+                <rect width="7" height="5" x="3" y="16" rx="1" />
+            </Fragment>
         )
     };
     return (

@@ -353,12 +353,12 @@ function App() {
                                 if (!userData[baseItem.id]) {
                                     userData[baseItem.id] = {};
                                 }
-                                
+
                                 // 如果基础日程中有 completed: true，同步到本地
                                 if (baseItem.completed === true && !userData[baseItem.id].completed) {
                                     userData[baseItem.id].completed = true;
                                 }
-                                
+
                                 // 如果基础日程中有 note 内容，合并到本地
                                 if (baseItem.note && baseItem.note.trim()) {
                                     if (userData[baseItem.id].note && userData[baseItem.id].note !== baseItem.note) {
@@ -977,12 +977,12 @@ function App() {
                 if (!userData[baseItem.id]) {
                     userData[baseItem.id] = {};
                 }
-                
+
                 // 如果基础日程中有 completed: true，同步到本地
                 if (baseItem.completed === true && !userData[baseItem.id].completed) {
                     userData[baseItem.id].completed = true;
                 }
-                
+
                 // 如果基础日程中有 note 内容，合并到本地
                 if (baseItem.note && baseItem.note.trim()) {
                     if (userData[baseItem.id].note && userData[baseItem.id].note !== baseItem.note) {
@@ -1498,21 +1498,24 @@ function App() {
                     <div className="flex gap-1">
                         <button
                             onClick={() => setView('calendar')}
-                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${view === 'calendar' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                            className={`px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${view === 'calendar' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                         >
-                            日历视图
+                            <Icon name="grid" className="w-4 h-4 shrink-0" />
+                            <span className="hidden sm:inline">日历视图</span>
                         </button>
                         <button
                             onClick={() => setView('anime')}
-                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${view === 'anime' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                            className={`px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${view === 'anime' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                         >
-                            追番表
+                            <Icon name="tv" className="w-4 h-4 shrink-0" />
+                            <span className="hidden sm:inline">追番表</span>
                         </button>
                         <button
                             onClick={() => setView('links')}
-                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${view === 'links' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                            className={`px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${view === 'links' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                         >
-                            快捷链接
+                            <Icon name="layout-grid" className="w-4 h-4 shrink-0" />
+                            <span className="hidden sm:inline">快捷链接</span>
                         </button>
                     </div>
                     <div className="relative flex-1 max-w-md">
@@ -1544,7 +1547,7 @@ function App() {
                     </div>
                 </header>
 
-                <main className="flex-1 overflow-hidden relative">
+                <main className="flex-1 overflow-hidden relative pb-10">
                     {view === 'calendar' && (
                         <div className="h-full flex flex-col p-3 md:p-6 space-y-4">
                             <div className="flex items-center justify-between gap-2">
@@ -1622,9 +1625,8 @@ function App() {
                                                     onClick={() => setShowSyncMenu(!showSyncMenu)}
                                                     className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs md:text-sm font-bold shadow-md hover:bg-emerald-700 transition-all shrink-0"
                                                 >
-                                                    <Icon name="cloud" className="w-3.5 h-3.5" />
+                                                    <Icon name="upload" className="w-3.5 h-3.5" />
                                                     <span className="hidden sm:inline">数据同步</span>
-                                                    <Icon name="chevron-down" className={`w-3 h-3 transition-transform ${showSyncMenu ? 'rotate-180' : ''}`} />
                                                 </button>
 
                                                 {showSyncMenu && (
@@ -1880,7 +1882,7 @@ function App() {
 
                     {view === 'changelog' && (
                         <div className="h-full overflow-y-auto custom-scrollbar p-4 md:p-8">
-                            <ChangelogView onBack={() => setView('settings')} />
+                            <ChangelogView />
                         </div>
                     )}
 
@@ -2841,7 +2843,14 @@ function App() {
                                 className="text-blue-600 dark:text-blue-400 hover:underline ml-1">
                                 项目Github
                             </a>
-                            &nbsp;&nbsp;&nbsp;&nbsp; 所有日程数据均来自枝江站(asoul.love)，感谢
+                            &nbsp;&nbsp;
+                            <a href="https://greasyfork.org/zh-CN/scripts/577237-%E6%9E%9D%E6%B1%9F%E8%BF%BD%E7%95%AA%E8%A1%A8%E8%BF%9B%E5%BA%A6%E4%BF%9D%E5%AD%98%E8%84%9A%E6%9C%AC"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 dark:text-blue-400 hover:underline ml-1">
+                                进度保存脚本
+                            </a>
+                            &nbsp;&nbsp; 所有日程数据均来自枝江站(asoul.love)，感谢
                             <a href="https://asoul.love/"
                                 target="_blank"
                                 rel="noopener noreferrer"
@@ -2863,7 +2872,7 @@ function App() {
                         </span>
                     </div>
                 </footer>
-                
+
                 {/* 重大更新通知 */}
                 <ChangelogNotification onOpenChangelog={() => { markChangelogAsRead(); setView('changelog'); }} />
             </div>
