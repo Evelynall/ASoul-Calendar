@@ -1,218 +1,118 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import './App.css';
 import { getSupabaseConfig, saveSupabaseConfig, isUsingDefaultConfig } from './supabaseClient';
-import { getSyncId, saveSyncId, uploadToSupabase, downloadFromSupabase, canSync, getTimeUntilNextSync } from './supabaseSync';
-import { saveToIndexedDB, loadFromIndexedDB, deleteDatabase } from './indexedDBStorage';
-import FirstTimeNotice from './FirstTimeNotice';
+import { getSyncId, saveSyncId, uploadToSupabase, downloadFromSupabase, getTimeUntilNextSync } from './supabaseSync';
 import Icon from './components/Icon';
-import SettingsSection from './components/SettingsSection';
-import ScheduleCard from './components/ScheduleCard';
-import ChangelogView from './components/ChangelogView';
-import LinksView from './components/LinksView';
+import FirstTimeNotice from './FirstTimeNotice';
 import NetworkStatus from './components/NetworkStatus';
+import LinksView from './components/LinksView';
 import ChangelogNotification, { markChangelogAsRead } from './components/ChangelogNotification';
-import { parseICS, syncIcsCalendars } from './services/icsParser';
+import { syncIcsCalendars, parseICS } from './services/icsParser';
 import {
-    extractUserData,
     uploadToGist,
     downloadFromGist,
-    mergeUserData,
-    reloadSchedules
+    mergeUserData
 } from './services/gistSync';
+
 import {
-    extractUserDataForExport,
-    importUserData,
-    mergeImportedUserData,
-    reloadSchedulesFromUserData,
-    exportUserCreatedSchedules,
-    exportCleanedSchedules,
-    clearUserData
-} from './services/dataManager';
-import {
-    STORAGE_KEY,
-    USER_DATA_KEY,
-    BASE_SCHEDULES_KEY,
-    BASE_SCHEDULES_VERSION_KEY,
-    BASE_SCHEDULES_LAST_FETCH_KEY,
-    THEME_KEY,
     ICS_CONFIG_KEY,
-    DISPLAY_MODE_KEY,
-    SPECIAL_GROUP_COLOR_KEY,
-    ANIME_VIEW_KEY,
     GIST_TOKEN_KEY,
     GIST_ID_KEY,
     CUSTOM_COLORS_KEY,
     LINKS_KEY,
-    SHOW_SEARCH_BTN_KEY,
-    SHOW_DYNAMIC_BTN_KEY,
-    GIST_AUTO_SYNC_KEY,
+    ANIME_VIEW_KEY,
+    USER_DATA_KEY,
+    BASE_SCHEDULES_KEY,
     SUPABASE_AUTO_SYNC_KEY,
-    BASE_SCHEDULES_URL,
-    DEFAULT_MEMBER_CONFIG,
-    LIVE_ROOM_URLS
+    DISPLAY_MODE_KEY,
+    SPECIAL_GROUP_COLOR_KEY,
+    SHOW_SEARCH_BTN_KEY,
+    SHOW_DYNAMIC_BTN_KEY
 } from './constants';
-import {
-    getBaseSchedulesUrl,
-    getBackupBaseSchedulesUrls,
-    shouldFetchBaseSchedules,
-    getMemberConfigColors,
-    getMemberByLiveRoomUrl,
-    getMemberConfig,
-    formatDateString,
-    toZeroDate,
-    extractUrlFromText
-} from './utils';
+import { formatDateString, toZeroDate, extractUrlFromText } from './utils';
+import { getInitialLinks } from './data/defaultLinks';
 
-const MEMBER_CONFIG = getMemberConfigColors();
+// Hooks
+import { useSchedules, mergeSchedules, extractUserDataFromSchedules } from './hooks/useSchedules';
+import { useAutoSync } from './hooks/useAutoSync';
+import { useUrlParamLink } from './hooks/useUrlParamLink';
+import { useTheme } from './hooks/useTheme';
+
+// Views
+import CalendarView from './views/CalendarView';
+import AnimeView from './views/AnimeView';
+import SearchView from './views/SearchView';
+import SettingsView from './views/SettingsView';
+
+// Components
+import AppHeader from './AppHeader';
+import NoteModal from './components/modals/NoteModal';
+import AddScheduleModal from './components/modals/AddScheduleModal';
+import ExternalLinkModal from './components/modals/ExternalLinkModal';
+import SetLinkCandidateModal from './components/modals/SetLinkCandidateModal';
+
+// ── 计算当前周的七天 ─────────────────────────────────────────────────────────
+function getWeekDays(currentDate) {
+    const ref = toZeroDate(currentDate);
+    const day = ref.getDay();
+    const diffToMonday = day === 0 ? 6 : day - 1;
+    const monday = new Date(ref);
+    monday.setDate(ref.getDate() - diffToMonday);
+    return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + i);
+        return formatDateString(d);
+    });
+}
 
 function App() {
-    const [schedules, setSchedules] = useState([]);
-    const [isLoadingBase, setIsLoadingBase] = useState(true);
-    const [fetchError, setFetchError] = useState(false);
-
+    // ── 基础状态 ────────────────────────────────────────────────────────────
     const [currentDate, setCurrentDate] = useState(() => toZeroDate());
     const [view, setView] = useState(() => localStorage.getItem(ANIME_VIEW_KEY) || 'calendar');
     const [searchQuery, setSearchQuery] = useState('');
-    const [inputText, setInputText] = useState('');
-    const [editingNoteId, setEditingNoteId] = useState(null);
-    const [tempNote, setTempNote] = useState('');
-    const [tempLink, setTempLink] = useState('');
-    const [themeMode, setThemeMode] = useState(() => localStorage.getItem(THEME_KEY) || 'auto');
-    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
     const [showSyncMenu, setShowSyncMenu] = useState(false);
-    const [icsUrls, setIcsUrls] = useState(() => {
-        const saved = localStorage.getItem(ICS_CONFIG_KEY);
-        return saved ? JSON.parse(saved) : '';
-    });
+
+    // ── 主题 ────────────────────────────────────────────────────────────────
+    const { themeMode, toggleTheme } = useTheme();
+
+    // ── 日程数据 ────────────────────────────────────────────────────────────
+    const {
+        schedules,
+        setSchedules,
+        isLoadingBase,
+        fetchError,
+        setFetchError,
+        handleUpdateBaseSchedules
+    } = useSchedules();
+
+    // ── 外观设置 ────────────────────────────────────────────────────────────
     const [displayMode, setDisplayMode] = useState(() => localStorage.getItem(DISPLAY_MODE_KEY) || 'multi-color');
-    const [useSpecialGroupColor, setUseSpecialGroupColor] = useState(() => localStorage.getItem(SPECIAL_GROUP_COLOR_KEY) !==
-        'false');
-    const [gistToken, setGistToken] = useState(() => localStorage.getItem(GIST_TOKEN_KEY) || '');
-    const [gistId, setGistId] = useState(() => localStorage.getItem(GIST_ID_KEY) || '');
-    const [isGistSyncing, setIsGistSyncing] = useState(false);
-    const [gistAutoSync, setGistAutoSync] = useState(() => localStorage.getItem(GIST_AUTO_SYNC_KEY) === 'true');
-    const [gistAutoSyncPending, setGistAutoSyncPending] = useState(false);
-    const [supabaseAutoSync, setSupabaseAutoSync] = useState(() => localStorage.getItem(SUPABASE_AUTO_SYNC_KEY) === 'true');
-    const [supabaseAutoSyncPending, setSupabaseAutoSyncPending] = useState(false);
-    const [showAutoSyncToast, setShowAutoSyncToast] = useState(false);
-    const [autoSyncToastMessage, setAutoSyncToastMessage] = useState('');
+    const [useSpecialGroupColor, setUseSpecialGroupColor] = useState(
+        () => localStorage.getItem(SPECIAL_GROUP_COLOR_KEY) !== 'false'
+    );
     const [customColors, setCustomColors] = useState(() => {
         const saved = localStorage.getItem(CUSTOM_COLORS_KEY);
         return saved ? JSON.parse(saved) : {};
     });
     const [showSearchBtn, setShowSearchBtn] = useState(() => localStorage.getItem(SHOW_SEARCH_BTN_KEY) !== 'false');
     const [showDynamicBtn, setShowDynamicBtn] = useState(() => localStorage.getItem(SHOW_DYNAMIC_BTN_KEY) !== 'false');
-    const [links, setLinks] = useState(() => {
-        const saved = localStorage.getItem(LINKS_KEY);
-        // 5条录播默认链接，用于迁移补充
-        const replayLinks = [
-            {
-                id: 'default-replay-1',
-                title: '贝拉录播',
-                description: '贝拉直播录播合集',
-                url: 'https://space.bilibili.com/672353429/lists/222938?type=series',
-                icon: 'bilibili'
-            },
-            {
-                id: 'default-replay-2',
-                title: '嘉然录播',
-                description: '嘉然直播录播合集',
-                url: 'https://space.bilibili.com/672328094/lists/222940?type=series',
-                icon: 'bilibili'
-            },
-            {
-                id: 'default-replay-3',
-                title: '乃琳录播',
-                description: '乃琳直播录播合集',
-                url: 'https://space.bilibili.com/672342685/lists/222754?type=series',
-                icon: 'bilibili'
-            },
-            {
-                id: 'default-replay-4',
-                title: '心宜录播',
-                description: '心宜直播录播合集',
-                url: 'https://space.bilibili.com/3537115310721181/lists/3698069?type=series',
-                icon: 'bilibili'
-            },
-            {
-                id: 'default-replay-5',
-                title: '思诺录播',
-                description: '思诺直播录播合集',
-                url: 'https://space.bilibili.com/3537115310721781/lists/3692011?type=series',
-                icon: 'bilibili'
-            }
-        ];
-        if (saved) {
-            const existing = JSON.parse(saved);
-            const existingIds = new Set(existing.map(l => l.id));
-            const toAdd = replayLinks.filter(l => !existingIds.has(l.id));
-            // 若有缺失的录播链接，补充到最前面
-            return toAdd.length > 0 ? [...toAdd, ...existing] : existing;
-        }
-        // 默认链接
-        return [
-            ...replayLinks,
-            {
-                id: 'default-1',
-                title: 'A-SOUL官方账号',
-                description: 'A-SOUL官方B站账号',
-                url: 'https://space.bilibili.com/703007996',
-                icon: 'bilibili'
-            },
-            {
-                id: 'default-2',
-                title: '枝江日程表',
-                description: '粉丝搭建的第三方日程表',
-                url: 'https://asoul.love/',
-                icon: 'calendar'
-            },
-            {
-                id: 'default-3',
-                title: '贝极星空间站的日常',
-                description: '贝拉的tag动态',
-                url: 'https://www.bilibili.com/v/topic/detail?topic_id=32780&topic_name=%E8%B4%9D%E6%9E%81%E6%98%9F%E7%A9%BA%E9%97%B4%E7%AB%99%E7%9A%84%E6%97%A5%E5%B8%B8',
-                icon: 'calendar'
-            },
-            {
-                id: 'default-4',
-                title: '嘉心糖的手帐本',
-                description: '嘉然的tag动态',
-                url: 'https://www.bilibili.com/v/topic/detail?topic_id=36443&topic_name=%E5%98%89%E5%BF%83%E7%B3%96%E7%9A%84%E6%89%8B%E5%B8%90%E6%9C%AC',
-                icon: 'calendar'
-            },
-            {
-                id: 'default-5',
-                title: '乃琳夸夸群',
-                description: '乃琳的tag动态',
-                url: 'https://www.bilibili.com/v/topic/detail?topic_id=9825&topic_name=%E4%B9%83%E7%90%B3%E5%A4%B8%E5%A4%B8%E7%BE%A4',
-                icon: 'calendar'
-            },
-            {
-                id: 'default-6',
-                title: '今日宜心动',
-                description: '心宜的tag动态',
-                url: 'https://www.bilibili.com/v/topic/detail?topic_id=1120163&topic_name=%E4%BB%8A%E6%97%A5%E5%AE%9C%E5%BF%83%E5%8A%A8',
-                icon: 'calendar'
-            },
-            {
-                id: 'default-7',
-                title: '小海诺嘀嘀嘀吹',
-                description: '思诺的tag动态',
-                url: 'https://www.bilibili.com/v/topic/detail?topic_id=1123339&topic_name=%E5%B0%8F%E6%B5%B7%E8%AF%BA%E5%98%80%E5%98%80%E5%98%80%E5%90%B9',
-                icon: 'calendar'
-            },
-            {
-                id: 'default-8',
-                title: 'GitHub仓库',
-                description: '本项目开源地址',
-                url: 'https://github.com/Evelynall/ASoul-Data',
-                icon: 'github'
-            }
-        ];
+
+    // ── 链接 ────────────────────────────────────────────────────────────────
+    const [links, setLinks] = useState(() => getInitialLinks());
+
+    // ── ICS ─────────────────────────────────────────────────────────────────
+    const [icsUrls, setIcsUrls] = useState(() => {
+        const saved = localStorage.getItem(ICS_CONFIG_KEY);
+        return saved ? JSON.parse(saved) : '';
     });
 
-    // Supabase 同步相关状态
+    // ── Gist 同步 ────────────────────────────────────────────────────────────
+    const [gistToken, setGistToken] = useState(() => localStorage.getItem(GIST_TOKEN_KEY) || '');
+    const [gistId, setGistId] = useState(() => localStorage.getItem(GIST_ID_KEY) || '');
+    const [isGistSyncing, setIsGistSyncing] = useState(false);
+
+    // ── Supabase 同步 ────────────────────────────────────────────────────────
     const [supabaseUrl, setSupabaseUrl] = useState(() => {
         const config = getSupabaseConfig();
         return config.isCustom ? config.url : '';
@@ -229,6 +129,21 @@ function App() {
         return config.isCustom;
     });
 
+    // ── 自动同步 ─────────────────────────────────────────────────────────────
+    const { gistAutoSync, setGistAutoSync, supabaseAutoSync, setSupabaseAutoSync, showAutoSyncToast, autoSyncToastMessage } =
+        useAutoSync({ schedules, isLoadingBase, gistToken, gistId, setGistId, supabaseUrl, supabaseKey, syncId });
+
+    // ── URL 参数设置链接 ─────────────────────────────────────────────────────
+    const { setLinkCandidateModal, setSetLinkCandidateModal, applyScheduleLink } =
+        useUrlParamLink({ schedules, isLoadingBase, setSchedules, setCurrentDate, setView });
+
+    // ── 备注弹窗 ─────────────────────────────────────────────────────────────
+    const [editingNoteId, setEditingNoteId] = useState(null);
+    const [tempNote, setTempNote] = useState('');
+    const [tempLink, setTempLink] = useState('');
+
+    // ── 新增日程弹窗 ─────────────────────────────────────────────────────────
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [newSchedule, setNewSchedule] = useState({
         date: formatDateString(new Date()),
         time: '20:00',
@@ -241,829 +156,95 @@ function App() {
         isFavorite: false
     });
 
-    // 外部链接确认弹窗状态
-    const [externalLinkModal, setExternalLinkModal] = useState({
-        isOpen: false,
-        url: ''
-    });
+    // ── 外部链接确认弹窗 ─────────────────────────────────────────────────────
+    const [externalLinkModal, setExternalLinkModal] = useState({ isOpen: false, url: '' });
 
-    // URL 参数设置链接：候选日程选择弹窗状态
-    const [setLinkCandidateModal, setSetLinkCandidateModal] = useState({
-        isOpen: false,
-        candidates: [],   // 候选日程列表
-        pendingLink: ''   // 待写入的链接
-    });
+    // ── 文本解析（隐藏功能） ─────────────────────────────────────────────────
+    const [inputText, setInputText] = useState('');
 
-    const fileInputRef = useRef(null);
+    // ── 副作用：持久化 ────────────────────────────────────────────────────────
+    useEffect(() => { localStorage.setItem(ICS_CONFIG_KEY, JSON.stringify(icsUrls)); }, [icsUrls]);
+    useEffect(() => { if (gistToken) localStorage.setItem(GIST_TOKEN_KEY, gistToken); else localStorage.removeItem(GIST_TOKEN_KEY); }, [gistToken]);
+    useEffect(() => { if (gistId) localStorage.setItem(GIST_ID_KEY, gistId); else localStorage.removeItem(GIST_ID_KEY); }, [gistId]);
+    useEffect(() => { localStorage.setItem(CUSTOM_COLORS_KEY, JSON.stringify(customColors)); setSchedules(prev => [...prev]); }, [customColors]);
+    useEffect(() => { setSchedules(prev => [...prev]); }, [useSpecialGroupColor]);
+    useEffect(() => { localStorage.setItem(LINKS_KEY, JSON.stringify(links)); }, [links]);
+    useEffect(() => { if (showCustomConfig && supabaseUrl && supabaseKey) { saveSupabaseConfig(supabaseUrl, supabaseKey); } else if (!showCustomConfig) { saveSupabaseConfig('', ''); } }, [supabaseUrl, supabaseKey, showCustomConfig]);
+    useEffect(() => { if (syncId) saveSyncId(syncId); }, [syncId]);
+    useEffect(() => { localStorage.setItem(ANIME_VIEW_KEY, view); }, [view]);
 
-    // 加载并合并基础日程库和用户数据
+    // 同步冷却倒计时
     useEffect(() => {
-        const loadSchedules = async () => {
-            setIsLoadingBase(true);
-            try {
-                // 1. 先加载缓存数据，立即显示界面
-                let baseSchedules = [];
-                const cached = localStorage.getItem(BASE_SCHEDULES_KEY);
-                if (cached) {
-                    try {
-                        baseSchedules = JSON.parse(cached);
-                        console.log('使用缓存的基础日程');
-                    } catch (e) {
-                        console.warn('缓存数据解析失败:', e);
-                    }
-                }
-
-                // 2. 加载用户数据（完成状态、备注、用户添加的日程）
-                let userData = {};
-
-                // 尝试从 localStorage 读取
-                try {
-                    const localData = localStorage.getItem(USER_DATA_KEY);
-                    if (localData) {
-                        userData = JSON.parse(localData);
-                        console.log('[数据加载] 从 localStorage 加载用户数据成功');
-                    }
-                } catch (error) {
-                    console.warn('[数据加载] localStorage 读取失败，尝试从 IndexedDB 恢复:', error);
-                }
-
-                // 如果 localStorage 失败，尝试从 IndexedDB 恢复
-                if (!userData || Object.keys(userData).length === 0) {
-                    try {
-                        const indexedData = await loadFromIndexedDB(USER_DATA_KEY);
-                        if (indexedData) {
-                            userData = indexedData;
-                            console.log('[数据恢复] 从 IndexedDB 恢复用户数据成功');
-                            // 恢复到 localStorage
-                            localStorage.setItem(USER_DATA_KEY, JSON.stringify(userData));
-                            console.log('[数据恢复] 已将数据恢复到 localStorage');
-                        }
-                    } catch (error) {
-                        console.error('[数据恢复] IndexedDB 读取失败:', error);
-                    }
-                }
-
-                // 3. 合并缓存数据并立即显示
-                const mergedSchedules = baseSchedules.map(baseItem => {
-                    const userItem = userData[baseItem.id];
-                    return {
-                        ...baseItem,
-                        completed: userItem?.completed || baseItem.completed || false,
-                        note: userItem?.note || baseItem.note || '',
-                        link: userItem?.link || baseItem.link || '',
-                        isFavorite: userItem?.isFavorite || false,
-                        isAnime: userItem?.isAnime || baseItem.isAnime || false,
-                        isBaseSchedule: true // 标记为基础日程
-                    };
-                });
-
-                // 4. 添加用户自己创建的日程
-                const userSchedules = Object.values(userData)
-                    .filter(item => item.isUserCreated)
-                    .map(item => ({
-                        ...item,
-                        isAnime: item.isAnime || false,
-                        isFavorite: item.isFavorite || false
-                    }));
-
-                // 立即设置日程数据，避免白屏
-                setSchedules([...mergedSchedules, ...userSchedules]);
-                setIsLoadingBase(false);
-
-                // 5. 后台检查是否需要更新基础日程库（仅在线时）
-                if (shouldFetchBaseSchedules() && navigator.onLine) {
-                    console.log('后台更新基础日程库...');
-                    try {
-                        const response = await fetch(getBaseSchedulesUrl());
-                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-                        const data = await response.json();
-                        const newBaseSchedules = data.schedules || [];
-                        const baseVersion = data.version || Date.now();
-
-                        localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
-
-                        if (JSON.stringify(newBaseSchedules) !== JSON.stringify(baseSchedules)) {
-                            console.log('发现基础日程库更新，重新合并数据');
-                            localStorage.setItem(BASE_SCHEDULES_KEY, JSON.stringify(newBaseSchedules));
-                            localStorage.setItem(BASE_SCHEDULES_VERSION_KEY, baseVersion.toString());
-
-                            // 同步基础日程中的 completed 和 note 到本地用户数据
-                            newBaseSchedules.forEach(baseItem => {
-                                if (!userData[baseItem.id]) {
-                                    userData[baseItem.id] = {};
-                                }
-
-                                // 如果基础日程中有 completed: true，同步到本地
-                                if (baseItem.completed === true && !userData[baseItem.id].completed) {
-                                    userData[baseItem.id].completed = true;
-                                }
-
-                                // 如果基础日程中有 note 内容，合并到本地
-                                if (baseItem.note && baseItem.note.trim()) {
-                                    if (userData[baseItem.id].note && userData[baseItem.id].note !== baseItem.note) {
-                                        // 如果本地已有不同的备注，合并两者
-                                        userData[baseItem.id].note = `${userData[baseItem.id].note}\n---\n${baseItem.note}`;
-                                    } else if (!userData[baseItem.id].note) {
-                                        // 如果本地没有备注，直接使用基础日程的备注
-                                        userData[baseItem.id].note = baseItem.note;
-                                    }
-                                }
-                            });
-
-                            // 保存更新后的用户数据
-                            localStorage.setItem(USER_DATA_KEY, JSON.stringify(userData));
-
-                            const updatedMergedSchedules = newBaseSchedules.map(baseItem => {
-                                const userItem = userData[baseItem.id];
-                                return {
-                                    ...baseItem,
-                                    completed: userItem?.completed || baseItem.completed || false,
-                                    note: userItem?.note || baseItem.note || '',
-                                    link: userItem?.link || baseItem.link || '',
-                                    isFavorite: userItem?.isFavorite || false,
-                                    isAnime: userItem?.isAnime || baseItem.isAnime || false,
-                                    isBaseSchedule: true
-                                };
-                            });
-                            setSchedules([...updatedMergedSchedules, ...userSchedules]);
-                        } else {
-                            console.log('基础日程库无更新');
-                        }
-                        console.log('后台更新基础日程库成功');
-                    } catch (error) {
-                        console.warn('后台更新基础日程库失败:', error);
-                        if (!cached) setFetchError(true);
-                    }
-                } else if (!navigator.onLine) {
-                    console.log('离线模式，跳过基础日程库更新');
-                }
-
-            } catch (error) {
-                console.error('加载日程数据失败:', error);
-                setIsLoadingBase(false);
-
-                // 如果完全失败，尝试加载旧的完整数据（兼容旧版本）
-                const oldData = localStorage.getItem(STORAGE_KEY);
-                if (oldData) {
-                    try {
-                        const data = JSON.parse(oldData);
-                        setSchedules(Array.isArray(data) ? data.map(item => ({
-                            ...item,
-                            isAnime: item.isAnime || false,
-                            isFavorite: item.isFavorite || false
-                        })) : []);
-                    } catch (e) {
-                        console.error('旧数据解析失败:', e);
-                        setSchedules([]);
-                    }
-                } else {
-                    setSchedules([]);
-                }
-            }
-        };
-
-        loadSchedules();
-    }, []);
-
-    useEffect(() => {
-        if (schedules.length === 0) return;
-
-        // 分离用户数据和基础数据
-        const userData = {};
-
-        schedules.forEach(schedule => {
-            if (schedule.isUserCreated) {
-                // 用户创建的日程，保存完整数据
-                userData[schedule.id] = { ...schedule, isUserCreated: true };
-            } else if (schedule.isBaseSchedule) {
-                // 基础日程，只保存用户修改的部分
-                const userModifications = {};
-                if (schedule.completed) userModifications.completed = true;
-                if (schedule.note) userModifications.note = schedule.note;
-                // 保存用户自定义的链接（排除系统自带的链接）
-                if (schedule.link && schedule.link.trim()) {
-                    const isSystemLink = schedule.link === schedule.liveRoomUrl ||
-                        schedule.link === schedule.dynamicUrl ||
-                        schedule.link === schedule.icsUrl;
-                    if (!isSystemLink) {
-                        userModifications.link = schedule.link;
-                    }
-                }
-                if (schedule.isFavorite) userModifications.isFavorite = true;
-                if (schedule.isAnime) userModifications.isAnime = true;
-
-                if (Object.keys(userModifications).length > 0) {
-                    userData[schedule.id] = userModifications;
-                }
-            }
-        });
-
-        // 保存到 localStorage
-        localStorage.setItem(USER_DATA_KEY, JSON.stringify(userData));
-        // 保留旧的存储方式作为备份（可选）
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(schedules));
-
-        // 同时备份到 IndexedDB
-        saveToIndexedDB(USER_DATA_KEY, userData).catch(err => {
-            console.error('[备份] IndexedDB 备份失败:', err);
-        });
-    }, [schedules]);
-
-    // 自动同步相关状态
-    const isInitializedRef = useRef(false);
-    const autoSyncTimerRef = useRef(null);
-    const pendingAutoSyncRef = useRef(null);
-    const skipNextSyncRef = useRef(false);
-
-    // 标记初始化完成
-    useEffect(() => {
-        if (!isLoadingBase && schedules.length > 0 && !isInitializedRef.current) {
-            isInitializedRef.current = true;
-            skipNextSyncRef.current = true;
-            console.log('[初始化] 页面数据加载完成，已标记为初始化状态');
-        }
-    }, [isLoadingBase, schedules]);
-
-    // 自动同步触发函数
-    const triggerAutoSync = useCallback(async () => {
-        const userData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
-        let anySyncSuccess = false;
-
-        // 同步到 Supabase（如果已配置）
-        if (supabaseAutoSync && supabaseUrl && supabaseKey && syncId) {
-            try {
-                console.log('[自动同步] 正在上传到 Supabase...');
-                await uploadToSupabase(userData, syncId);
-                setAutoSyncToastMessage('Supabase 自动同步成功');
-                setShowAutoSyncToast(true);
-                console.log('[云同步] Supabase 云同步成功');
-                anySyncSuccess = true;
-            } catch (err) {
-                console.error('[自动同步] Supabase 同步失败:', err);
-            }
-        }
-
-        // 同步到 Gist（如果已配置）
-        if (gistAutoSync && gistToken) {
-            try {
-                console.log('[自动同步] 正在上传到 GitHub Gist...');
-                const result = await uploadToGist(gistToken, gistId, userData);
-                if (result.gistId && !gistId) {
-                    setGistId(result.gistId);
-                }
-                setAutoSyncToastMessage('Gist 自动同步成功');
-                setShowAutoSyncToast(true);
-                console.log('[云同步] GitHub Gist 云同步成功');
-                anySyncSuccess = true;
-            } catch (err) {
-                console.error('[自动同步] Gist 同步失败:', err);
-            }
-        }
-
-        // 如果有同步成功，3秒后隐藏提示
-        if (anySyncSuccess) {
-            setTimeout(() => setShowAutoSyncToast(false), 3000);
-        }
-
-        return anySyncSuccess;
-    }, [supabaseAutoSync, supabaseUrl, supabaseKey, syncId, gistAutoSync, gistToken, gistId]);
-
-    // 安排自动同步（用户操作后调用）
-    const scheduleAutoSync = useCallback(() => {
-        if (!isInitializedRef.current) {
-            return; // 初始化阶段不触发自动同步
-        }
-
-        if (skipNextSyncRef.current) {
-            skipNextSyncRef.current = false;
-            console.log('[自动同步] 跳过首次操作同步');
-            return; // 跳过第一次操作
-        }
-
-        // 清除之前的定时器
-        if (autoSyncTimerRef.current) {
-            clearTimeout(autoSyncTimerRef.current);
-        }
-
-        // 判断当前应该等待的时间
-        const isFirstAction = pendingAutoSyncRef.current === null;
-        const waitTime = isFirstAction ? 60000 : 180000; // 首次1分钟，后续3分钟
-        pendingAutoSyncRef.current = true;
-
-        console.log(`[自动同步] 已安排${waitTime / 1000}秒后触发同步`);
-
-        autoSyncTimerRef.current = setTimeout(async () => {
-            const success = await triggerAutoSync();
-            if (success) {
-                pendingAutoSyncRef.current = null;
-            } else {
-                // 如果同步失败（未配置），清除待处理状态
-                pendingAutoSyncRef.current = null;
-            }
-        }, waitTime);
-    }, [triggerAutoSync]);
-
-    // 监听用户操作触发自动同步
-    useEffect(() => {
-        if (!isInitializedRef.current || schedules.length === 0) return;
-
-        scheduleAutoSync();
-    }, [schedules]);
-
-    // 处理 URL 参数：?set_link=<scheduleId>&link=<encodedUrl>
-    // 用于通过外部链接为指定日程添加跳转链接
-    // ID 格式：20260504-0900-bella@asoul.love（日期-时间-标识符）
-    // 支持时间部分模糊匹配：0900 → 匹配 09xx；0000 或多候选 → 弹窗让用户选择
-
-    // 将链接写入指定日程并跳转视图（可复用）
-    const applyScheduleLink = useCallback((targetSchedule, decodedLink) => {
-        setSchedules(prev => prev.map(s =>
-            s.id === targetSchedule.id ? { ...s, link: decodedLink } : s
-        ));
-        const scheduleDate = targetSchedule.date;
-        const isCalendarSchedule = scheduleDate && scheduleDate !== '追番/追番';
-        if (isCalendarSchedule) {
-            setCurrentDate(toZeroDate(scheduleDate));
-            setView('calendar');
-        } else {
-            setView('anime');
-        }
-        alert(`已成功为日程「${targetSchedule.title || targetSchedule.subTitle}」设置链接：\n\n${decodedLink}`);
-    }, []);
-
-    const urlParamHandledRef = useRef(false);
-    useEffect(() => {
-        // 等待数据加载完成，且只处理一次
-        if (isLoadingBase || schedules.length === 0 || urlParamHandledRef.current) return;
-
-        const params = new URLSearchParams(window.location.search);
-        const targetId = params.get('set_link');
-        const rawLink = params.get('link');
-
-        if (!targetId || !rawLink) return;
-
-        // 标记为已处理，防止 schedules 状态更新后再次触发
-        urlParamHandledRef.current = true;
-
-        // 清除 URL 参数，避免刷新后重复触发
-        window.history.replaceState({}, '', window.location.pathname);
-
-        // 解码链接
-        let decodedLink;
-        try {
-            decodedLink = decodeURIComponent(rawLink);
-        } catch {
-            decodedLink = rawLink;
-        }
-
-        // 验证链接格式
-        if (!decodedLink.startsWith('http://') && !decodedLink.startsWith('https://')) {
-            alert(`URL 参数错误：链接格式无效，必须以 http:// 或 https:// 开头。\n\n收到的链接：${decodedLink}`);
-            return;
-        }
-
-        // ── 第一步：精确匹配 ──────────────────────────────────────────────
-        const exactMatch = schedules.find(s => s.id === targetId);
-        if (exactMatch) {
-            applyScheduleLink(exactMatch, decodedLink);
-            return;
-        }
-
-        // ── 第二步：模糊匹配（ID 格式：日期-时间-标识符）────────────────────
-        // 解析传入 ID 的三个部分
-        // 例：20260504-0900-bella@asoul.love → ['20260504', '0900', 'bella@asoul.love']
-        // 标识符部分可能含 @ 或 - ，切割时只切前两个 -
-        const idParts = targetId.split('-');
-        if (idParts.length < 3) {
-            alert(`未找到 ID 为「${targetId}」的日程，且该 ID 格式无法进行模糊匹配。`);
-            return;
-        }
-        const [datePart, timePart, ...restParts] = idParts;
-        const identPart = restParts.join('-'); // 标识符（可能含 -）
-
-        // 先按日期 + 标识符过滤出候选范围
-        const sameGroupSchedules = schedules.filter(s => {
-            const sParts = s.id.split('-');
-            if (sParts.length < 3) return false;
-            const [sDate, , ...sRestParts] = sParts;
-            const sIdent = sRestParts.join('-');
-            return sDate === datePart && sIdent === identPart;
-        });
-
-        if (sameGroupSchedules.length === 0) {
-            alert(`未找到 ID 为「${targetId}」的日程。\n\n日期「${datePart}」+ 标识符「${identPart}」的日程不存在，请检查 ID 是否正确。`);
-            return;
-        }
-
-        // ── 第三步：时间部分匹配策略 ─────────────────────────────────────
-        // 情况 A：时间为 0000，或同组日程多于 1 个 → 直接弹窗候选列表
-        // 情况 B：传入时间有具体小时（非 0000），同组只有 1 个 → 直接匹配（忽略分钟差异）
-        //        同组有多个但只有 1 个匹配小时前缀 → 直接匹配
-        //        同组有多个且多个匹配小时前缀 → 弹窗候选列表
-
-        const hourPrefix = timePart.slice(0, 2); // 取小时部分，如 "0900" → "09"
-        const isTimeUnknown = timePart === '0000';
-
-        if (isTimeUnknown) {
-            // 时间未知，若同组只有一个日程则直接匹配，否则弹窗让用户选择
-            if (sameGroupSchedules.length === 1) {
-                applyScheduleLink(sameGroupSchedules[0], decodedLink);
-            } else {
-                setSetLinkCandidateModal({ isOpen: true, candidates: sameGroupSchedules, pendingLink: decodedLink });
-            }
-            return;
-        }
-
-        // 在同组内按小时前缀进一步筛选
-        const hourMatches = sameGroupSchedules.filter(s => {
-            const sTimePart = s.id.split('-')[1] || '';
-            return sTimePart.startsWith(hourPrefix);
-        });
-
-        if (hourMatches.length === 1) {
-            // 唯一匹配，直接应用
-            applyScheduleLink(hourMatches[0], decodedLink);
-        } else if (hourMatches.length > 1) {
-            // 同小时内有多个日程，弹窗让用户选择
-            setSetLinkCandidateModal({ isOpen: true, candidates: hourMatches, pendingLink: decodedLink });
-        } else {
-            // 小时也没有匹配上，回退到同组全部候选
-            setSetLinkCandidateModal({ isOpen: true, candidates: sameGroupSchedules, pendingLink: decodedLink });
-        }
-    }, [isLoadingBase, schedules, applyScheduleLink]);
-
-    useEffect(() => {
-        localStorage.setItem(ICS_CONFIG_KEY, JSON.stringify(icsUrls));
-    }, [icsUrls]);
-
-    useEffect(() => {
-        if (gistToken) localStorage.setItem(GIST_TOKEN_KEY, gistToken);
-        else localStorage.removeItem(GIST_TOKEN_KEY);
-    }, [gistToken]);
-
-    useEffect(() => {
-        if (gistId) localStorage.setItem(GIST_ID_KEY, gistId);
-        else localStorage.removeItem(GIST_ID_KEY);
-    }, [gistId]);
-
-    useEffect(() => {
-        localStorage.setItem(CUSTOM_COLORS_KEY, JSON.stringify(customColors));
-        // 强制重新渲染以应用新颜色
-        setSchedules(prev => [...prev]);
-    }, [customColors]);
-
-    useEffect(() => {
-        // 当组合色开关变化时，强制重新渲染以应用新的配色逻辑
-        setSchedules(prev => [...prev]);
-    }, [useSpecialGroupColor]);
-
-    useEffect(() => {
-        localStorage.setItem(LINKS_KEY, JSON.stringify(links));
-    }, [links]);
-
-    // 保存 Supabase 配置
-    useEffect(() => {
-        if (showCustomConfig && supabaseUrl && supabaseKey) {
-            saveSupabaseConfig(supabaseUrl, supabaseKey);
-        } else if (!showCustomConfig) {
-            // 清除自定义配置，使用默认配置
-            saveSupabaseConfig('', '');
-        }
-    }, [supabaseUrl, supabaseKey, showCustomConfig]);
-
-    // 保存同步 ID
-    useEffect(() => {
-        if (syncId) {
-            saveSyncId(syncId);
-        }
-    }, [syncId]);
-
-    // 保存自动同步开关状态
-    useEffect(() => {
-        localStorage.setItem(GIST_AUTO_SYNC_KEY, gistAutoSync.toString());
-    }, [gistAutoSync]);
-
-    useEffect(() => {
-        localStorage.setItem(SUPABASE_AUTO_SYNC_KEY, supabaseAutoSync.toString());
-    }, [supabaseAutoSync]);
-
-    // 更新同步冷却时间
-    useEffect(() => {
-        const updateCooldown = () => {
-            const remaining = getTimeUntilNextSync();
-            setSyncCooldown(remaining);
-        };
-
+        const updateCooldown = () => setSyncCooldown(getTimeUntilNextSync());
         updateCooldown();
         const interval = setInterval(updateCooldown, 1000);
-
         return () => clearInterval(interval);
     }, []);
 
-    useEffect(() => {
-        const root = document.documentElement;
-        localStorage.setItem(THEME_KEY, themeMode);
-        const handleTheme = () => {
-            if (themeMode === 'auto') {
-                const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                if (isDark) {
-                    root.classList.add('dark');
-                } else {
-                    root.classList.remove('dark');
-                }
-            } else {
-                if (themeMode === 'dark') {
-                    root.classList.add('dark');
-                } else {
-                    root.classList.remove('dark');
-                }
-            }
-        };
-        handleTheme();
-
-        // 监听系统主题变化
-        if (themeMode === 'auto') {
-            const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-            const listener = (e) => {
-                if (e.matches) {
-                    root.classList.add('dark');
-                } else {
-                    root.classList.remove('dark');
-                }
-            };
-            mediaQuery.addEventListener('change', listener);
-            return () => mediaQuery.removeEventListener('change', listener);
-        }
-    }, [themeMode]);
-
-    const weekDays = useMemo(() => {
-        const ref = toZeroDate(currentDate);
-        const day = ref.getDay();
-        const diffToMonday = day === 0 ? 6 : day - 1;
-        const monday = new Date(ref);
-        monday.setDate(ref.getDate() - diffToMonday);
-
-        return Array.from({ length: 7 }, (_, i) => {
-            const d = new Date(monday);
-            d.setDate(monday.getDate() + i);
-            return formatDateString(d);
-        });
-    }, [currentDate]);
-
-    const jumpToDate = (dateStr) => {
-        setCurrentDate(toZeroDate(dateStr));
-        setView('calendar');
-        setSearchQuery('');
-    };
-
-    // 切换视图时保存到本地存储
-    useEffect(() => {
-        localStorage.setItem(ANIME_VIEW_KEY, view);
-    }, [view]);
-
     // 点击外部关闭同步菜单
     useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (showSyncMenu) {
-                setShowSyncMenu(false);
-            }
-        };
-        document.addEventListener('click', handleClickOutside);
-        return () => document.removeEventListener('click', handleClickOutside);
+        const handler = () => { if (showSyncMenu) setShowSyncMenu(false); };
+        document.addEventListener('click', handler);
+        return () => document.removeEventListener('click', handler);
     }, [showSyncMenu]);
 
-    const handleBilibiliSearch = (item) => {
-        const parts = item.date.split('/');
-        const year = parts[0];
-        const month = parseInt(parts[1], 10);
-        const day = parseInt(parts[2], 10);
-        const formattedDate = `${year}.${month}.${day}`;
-        const keyword = encodeURIComponent(`${item.category} ${formattedDate}`);
-        const url = `https://search.bilibili.com/all?keyword=${keyword}`;
-        window.open(url, '_blank');
-    };
-
-    const handleLiveRoom = (member) => {
-        const liveUrl = LIVE_ROOM_URLS[member];
-        if (liveUrl) {
-            window.open(liveUrl, '_blank');
-        }
-    };
-
-    const toggleComplete = (id) => {
-        setSchedules(prev => prev.map(s => s.id === id ? { ...s, completed: !s.completed } : s));
-    };
-
-    const toggleAnimeStatus = (id) => {
-        setSchedules(prev => prev.map(s => s.id === id ? { ...s, isAnime: !s.isAnime } : s));
-    };
-
-    // 切换收藏状态
-    const toggleFavorite = (id) => {
-        setSchedules(prev => prev.map(s => {
-            if (s.id === id) {
-                const newFavoriteStatus = !s.isFavorite;
-                // 如果收藏，同时标记为追番；如果取消收藏，恢复为普通日历日程
-                return {
-                    ...s,
-                    isFavorite: newFavoriteStatus,
-                    isAnime: newFavoriteStatus ? true : false
-                };
-            }
-            return s;
-        }));
-    };
-
-    const saveNote = (id) => {
-        // 在保存时自动从链接输入框文本中提取纯链接
-        let finalLink = tempLink;
-        if (tempLink.trim()) {
-            const extractedUrl = extractUrlFromText(tempLink);
-            if (extractedUrl) {
-                finalLink = extractedUrl;
-            }
-        }
-
-        setSchedules(prev => prev.map(s => s.id === id ? { ...s, note: tempNote, link: finalLink } : s));
-        setEditingNoteId(null);
-    };
+    // ── Memos ────────────────────────────────────────────────────────────────
+    const weekDays = useMemo(() => getWeekDays(currentDate), [currentDate]);
 
     const filteredSchedules = useMemo(() => {
         if (!searchQuery.trim()) return [];
         const keywords = searchQuery.toLowerCase().split(/\s+/).filter(k => k.length > 0);
         return schedules.filter(s => {
-            const searchableText = [s.title, s.subTitle, s.category, s.type, s.note || '', s.date].join(' ').toLowerCase();
-            return keywords.every(kw => searchableText.includes(kw));
+            const text = [s.title, s.subTitle, s.category, s.type, s.note || '', s.date].join(' ').toLowerCase();
+            return keywords.every(kw => text.includes(kw));
         }).sort((a, b) => new Date(b.date.replace(/\//g, '-')) - new Date(a.date.replace(/\//g, '-')));
     }, [schedules, searchQuery]);
 
+    // ── 操作函数 ─────────────────────────────────────────────────────────────
+    const toggleComplete = (id) => setSchedules(prev => prev.map(s => s.id === id ? { ...s, completed: !s.completed } : s));
+    const toggleFavorite = (id) => setSchedules(prev => prev.map(s => {
+        if (s.id !== id) return s;
+        const newFav = !s.isFavorite;
+        return { ...s, isFavorite: newFav, isAnime: newFav ? true : false };
+    }));
+
+    const saveNote = (id) => {
+        let finalLink = tempLink;
+        if (tempLink.trim()) {
+            const extracted = extractUrlFromText(tempLink);
+            if (extracted) finalLink = extracted;
+        }
+        setSchedules(prev => prev.map(s => s.id === id ? { ...s, note: tempNote, link: finalLink } : s));
+        setEditingNoteId(null);
+    };
+
+    const handleBilibiliSearch = (item) => {
+        const parts = item.date.split('/');
+        const keyword = encodeURIComponent(`${item.category} ${parts[0]}.${parseInt(parts[1], 10)}.${parseInt(parts[2], 10)}`);
+        window.open(`https://search.bilibili.com/all?keyword=${keyword}`, '_blank');
+    };
+
     const handleManualAdd = () => {
         if (!newSchedule.title) { alert('标题为必填项'); return; }
-
         let formattedDate = newSchedule.date.replace(/-/g, '/');
         let time = newSchedule.time;
-
-        // 如果是追番日程，使用固定日期和时间
-        if (newSchedule.isAnime) {
-            formattedDate = '追番/追番';
-            time = '追番';
-        }
-
+        if (newSchedule.isAnime) { formattedDate = '追番/追番'; time = '追番'; }
         const id = `manual-${formattedDate}-${time}-${Math.random().toString(36).substr(2, 4)}`;
-        const entry = {
-            ...newSchedule,
-            id,
-            date: formattedDate,
-            time: time,
-            completed: false,
-            note: '',
-            isUserCreated: true // 标记为用户创建
-        };
-        setSchedules(prev => [...prev, entry]);
+        setSchedules(prev => [...prev, { ...newSchedule, id, date: formattedDate, time, completed: false, note: '', isUserCreated: true }]);
         setIsAddModalOpen(false);
-
-        // 只有日历日程才需要跳转到日期位置
-        if (!newSchedule.isAnime) {
-            setCurrentDate(toZeroDate(formattedDate));
-        }
-
+        if (!newSchedule.isAnime) setCurrentDate(toZeroDate(formattedDate));
         setView(newSchedule.isAnime ? 'anime' : 'calendar');
     };
 
     const handleSyncIcs = async () => {
-        if (!icsUrls || !icsUrls.trim()) {
-            alert('请先在设置中配置 ICS 订阅链接');
-            setView('settings');
-            return;
-        }
+        if (!icsUrls || !icsUrls.trim()) { alert('请先在设置中配置 ICS 订阅链接'); setView('settings'); return; }
         setIsSyncing(true);
-
         try {
             const { newItems, totalAdded } = await syncIcsCalendars(icsUrls, schedules);
-
-            if (newItems.length > 0) {
-                setSchedules(prev => [...prev, ...newItems]);
-                alert(`同步成功！新增了 ${totalAdded} 项日程。`);
-            } else {
-                alert('同步完成，暂无新日程。');
-            }
-        } catch (err) {
-            console.error(err);
-            alert('同步失败：' + err.message);
-        } finally {
-            setIsSyncing(false);
-        }
-    };
-
-    const handleUpdateBaseSchedules = async () => {
-        setIsLoadingBase(true);
-        try {
-            const response = await fetch(getBaseSchedulesUrl());
-            if (!response.ok) throw new Error('无法加载基础日程库');
-
-            const data = await response.json();
-            const baseSchedules = data.schedules || [];
-            const baseVersion = data.version || Date.now();
-
-            localStorage.setItem(BASE_SCHEDULES_KEY, JSON.stringify(baseSchedules));
-            localStorage.setItem(BASE_SCHEDULES_VERSION_KEY, baseVersion.toString());
-            localStorage.setItem(BASE_SCHEDULES_LAST_FETCH_KEY, Date.now().toString());
-
-            const userData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
-
-            // 同步基础日程中的 completed 和 note 到本地用户数据
-            baseSchedules.forEach(baseItem => {
-                if (!userData[baseItem.id]) {
-                    userData[baseItem.id] = {};
-                }
-
-                // 如果基础日程中有 completed: true，同步到本地
-                if (baseItem.completed === true && !userData[baseItem.id].completed) {
-                    userData[baseItem.id].completed = true;
-                }
-
-                // 如果基础日程中有 note 内容，合并到本地
-                if (baseItem.note && baseItem.note.trim()) {
-                    if (userData[baseItem.id].note && userData[baseItem.id].note !== baseItem.note) {
-                        // 如果本地已有不同的备注，合并两者
-                        userData[baseItem.id].note = `${userData[baseItem.id].note}\n---\n${baseItem.note}`;
-                    } else if (!userData[baseItem.id].note) {
-                        // 如果本地没有备注，直接使用基础日程的备注
-                        userData[baseItem.id].note = baseItem.note;
-                    }
-                }
-            });
-
-            // 保存更新后的用户数据
-            localStorage.setItem(USER_DATA_KEY, JSON.stringify(userData));
-
-            const mergedSchedules = baseSchedules.map(baseItem => {
-                const userItem = userData[baseItem.id];
-                return {
-                    ...baseItem,
-                    completed: userItem?.completed || baseItem.completed || false,
-                    note: userItem?.note || baseItem.note || '',
-                    link: userItem?.link || baseItem.link || '',
-                    isFavorite: userItem?.isFavorite || false,
-                    isAnime: userItem?.isAnime || baseItem.isAnime || false,
-                    isBaseSchedule: true
-                };
-            });
-
-            const userSchedules = Object.values(userData)
-                .filter(item => item.isUserCreated)
-                .map(item => ({
-                    ...item,
-                    isAnime: item.isAnime || false,
-                    isFavorite: item.isFavorite || false
-                }));
-
-            setSchedules([...mergedSchedules, ...userSchedules]);
-            alert(`成功更新基础日程库！共 ${baseSchedules.length} 条日程`);
-        } catch (error) {
-            console.error('更新失败:', error);
-            alert('更新基础日程库失败：' + error.message);
-        } finally {
-            setIsLoadingBase(false);
-        }
-    };
-
-    const parseText = (text) => {
-        if (!text.trim()) return;
-        const lines = text.split('\n').map(l => l.trim()).filter(l => l !== '');
-        const newSchedules = [];
-        let activeDate = '';
-        const dateRegex = /(\d{4}[\/\-]\d{2}[\/\-]\d{2})/;
-        const timeRegex = /^(\d{2}:\d{2})$/;
-        const generateFingerprint = (item) => `${item.date}|${item.time}|${item.subTitle}|${item.title}`.replace(/\s+/g,
-            '');
-        const existingFingerprints = new Set(schedules.map(generateFingerprint));
-
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i]; const dateMatch = line.match(dateRegex); if (dateMatch) { activeDate = dateMatch[1].replace(/-/g, '/'); continue; } const timeMatch = line.match(timeRegex); if (timeMatch
-                && activeDate) {
-                const time = timeMatch[1]; const type = lines[i + 1] || '未知'; const subTitle = lines[i + 2] || '';
-                const rawTitle = lines[i + 3] || ''; let finalTitle = (rawTitle === '动态' || !rawTitle) ? subTitle : rawTitle; const
-                    currentFingerprint = `${activeDate}|${time}|${subTitle}|${finalTitle}`.replace(/\s+/g, ''); if
-                    (existingFingerprints.has(currentFingerprint)) { i += 3; continue; } let category = '其他'; const
-                        checkString = (subTitle + finalTitle); if (checkString.includes('贝拉')) category = '贝拉'; else if
-                            (checkString.includes('嘉然')) category = '嘉然'; else if (checkString.includes('乃琳')) category = '乃琳'; else if
-                                (checkString.includes('思诺')) category = '思诺'; else if (checkString.includes('心宜')) category = '心宜'; else if
-                                    (checkString.includes('A-SOUL')) category = 'A-SOUL'; else if (checkString.includes('有点宜思') ||
-                                        checkString.includes('心宜思诺') || checkString.includes('小心思')) category = '小心思'; const
-                                            id = `parse-${activeDate}-${time}-${Math.random().toString(36).substr(2, 4)}`.replace(/\s+/g, '');
-                newSchedules.push({
-                    id, date: activeDate, time, type, subTitle, title: finalTitle, category, completed: false,
-                    note: ''
-                }); existingFingerprints.add(currentFingerprint); i += 3;
-            }
-        } if (newSchedules.length > 0) {
-            setSchedules(prev => [...prev, ...newSchedules]);
-            alert(`成功导入 ${newSchedules.length} 项新日程。`);
-            setInputText('');
-            setView('calendar');
-        } else if (text.trim() !== "") { alert('未发现新日程。'); }
+            if (newItems.length > 0) { setSchedules(prev => [...prev, ...newItems]); alert(`同步成功！新增了 ${totalAdded} 项日程。`); }
+            else alert('同步完成，暂无新日程。');
+        } catch (err) { alert('同步失败：' + err.message); }
+        finally { setIsSyncing(false); }
     };
 
     const handleImportJSON = (event) => {
@@ -1072,125 +253,53 @@ function App() {
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
-                const importedData = JSON.parse(e.target.result);
-
-                // 检查是否是用户数据格式（对象）还是旧的完整数据格式（数组）
+                const imported = JSON.parse(e.target.result);
                 let userData = {};
-
-                if (Array.isArray(importedData)) {
-                    // 旧格式：完整日程数组，需要转换为用户数据格式
+                if (Array.isArray(imported)) {
                     alert('检测到旧格式或特殊属性数据，正在转换...');
-                    importedData.forEach(schedule => {
-                        if (schedule.isUserCreated) {
-                            userData[schedule.id] = { ...schedule, isUserCreated: true };
-                        } else {
-                            const userModifications = {};
-                            if (schedule.completed) userModifications.completed = true;
-                            if (schedule.note) userModifications.note = schedule.note;
-                            if (schedule.link && !schedule.liveRoomUrl) userModifications.link = schedule.link;
-                            if (schedule.isFavorite) userModifications.isFavorite = true;
-                            if (schedule.isAnime) userModifications.isAnime = true;
-
-                            if (Object.keys(userModifications).length > 0) {
-                                userData[schedule.id] = userModifications;
-                            }
+                    imported.forEach(s => {
+                        if (s.isUserCreated) { userData[s.id] = { ...s, isUserCreated: true }; }
+                        else {
+                            const m = {};
+                            if (s.completed) m.completed = true;
+                            if (s.note) m.note = s.note;
+                            if (s.link && !s.liveRoomUrl) m.link = s.link;
+                            if (s.isFavorite) m.isFavorite = true;
+                            if (s.isAnime) m.isAnime = true;
+                            if (Object.keys(m).length > 0) userData[s.id] = m;
                         }
                     });
-                } else if (typeof importedData === 'object') {
-                    // 新格式：用户数据对象
-                    userData = importedData;
-                } else {
-                    throw new Error('文件格式不正确');
-                }
+                } else if (typeof imported === 'object') {
+                    userData = imported;
+                } else { throw new Error('文件格式不正确'); }
 
-                // 获取当前用户数据
-                const currentUserData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
-
-                // 合并用户数据
-                let mergedCount = 0;
-                let addedCount = 0;
-                let updatedCount = 0;
-
+                const current = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
+                let added = 0, updated = 0, merged = 0;
                 Object.keys(userData).forEach(id => {
-                    if (currentUserData[id]) {
-                        // 已存在，合并数据
-                        if (userData[id].isUserCreated) {
-                            // 用户创建的日程，完全替换
-                            currentUserData[id] = userData[id];
-                            updatedCount++;
-                        } else {
-                            // 基础日程的修改，合并字段
-                            const existing = currentUserData[id];
-                            const imported = userData[id];
-
-                            // 合并备注
-                            if (imported.note) {
-                                if (existing.note && existing.note !== imported.note) {
-                                    currentUserData[id].note = `${existing.note}\n---\n${imported.note}`;
-                                    mergedCount++;
-                                } else {
-                                    currentUserData[id].note = imported.note;
-                                }
-                            }
-
-                            // 合并其他字段
-                            if (imported.completed) currentUserData[id].completed = true;
-                            if (imported.link) currentUserData[id].link = imported.link;
-                            if (imported.isFavorite) currentUserData[id].isFavorite = true;
-                            if (imported.isAnime) currentUserData[id].isAnime = true;
-
-                            updatedCount++;
+                    if (current[id]) {
+                        if (userData[id].isUserCreated) { current[id] = userData[id]; updated++; }
+                        else {
+                            const ex = current[id]; const im = userData[id];
+                            if (im.note) { if (ex.note && ex.note !== im.note) { current[id].note = `${ex.note}\n---\n${im.note}`; merged++; } else { current[id].note = im.note; } }
+                            if (im.completed) current[id].completed = true;
+                            if (im.link) current[id].link = im.link;
+                            if (im.isFavorite) current[id].isFavorite = true;
+                            if (im.isAnime) current[id].isAnime = true;
+                            updated++;
                         }
-                    } else {
-                        // 新数据
-                        currentUserData[id] = userData[id];
-                        addedCount++;
-                    }
+                    } else { current[id] = userData[id]; added++; }
                 });
 
-                // 保存合并后的用户数据
-                localStorage.setItem(USER_DATA_KEY, JSON.stringify(currentUserData));
+                localStorage.setItem(USER_DATA_KEY, JSON.stringify(current));
+                const base = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
+                setSchedules(mergeSchedules(base, current));
 
-                // 重新加载日程
-                const baseSchedules = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
-
-                // 合并基础日程和用户数据
-                const mergedSchedules = baseSchedules.map(baseItem => {
-                    const userItem = currentUserData[baseItem.id];
-                    return {
-                        ...baseItem,
-                        completed: userItem?.completed || baseItem.completed || false,
-                        note: userItem?.note || baseItem.note || '',
-                        link: userItem?.link || baseItem.link || '',
-                        isFavorite: userItem?.isFavorite || false,
-                        isAnime: userItem?.isAnime || baseItem.isAnime || false,
-                        isBaseSchedule: true
-                    };
-                });
-
-                // 添加用户创建的日程
-                const userSchedules = Object.values(currentUserData)
-                    .filter(item => item.isUserCreated)
-                    .map(item => ({
-                        ...item,
-                        isAnime: item.isAnime || false,
-                        isFavorite: item.isFavorite || false
-                    }));
-
-                setSchedules([...mergedSchedules, ...userSchedules]);
-
-                // 显示导入结果
-                let message = '导入完成！\n\n';
-                if (addedCount > 0) message += `新增 ${addedCount} 条数据\n`;
-                if (updatedCount > 0) message += `更新 ${updatedCount} 条数据\n`;
-                if (mergedCount > 0) message += `合并 ${mergedCount} 条备注\n`;
-
-                alert(message);
-
-            } catch (err) {
-                console.error('导入错误:', err);
-                alert('导入失败：' + err.message);
-            }
+                let msg = '导入完成！\n\n';
+                if (added) msg += `新增 ${added} 条数据\n`;
+                if (updated) msg += `更新 ${updated} 条数据\n`;
+                if (merged) msg += `合并 ${merged} 条备注\n`;
+                alert(msg);
+            } catch (err) { alert('导入失败：' + err.message); }
             event.target.value = '';
         };
         reader.readAsText(file);
@@ -1199,651 +308,232 @@ function App() {
     const handleImportICSFile = async (event) => {
         const file = event.target.files[0];
         if (!file) return;
-
         const reader = new FileReader();
         reader.onload = async (e) => {
             try {
-                const icsText = e.target.result;
-                const parsedEvents = parseICS(icsText);
-
-                if (parsedEvents.length === 0) {
-                    alert('未找到有效的日程数据');
-                    return;
-                }
-
-                // 检查重复项
+                const parsed = parseICS(e.target.result);
+                if (parsed.length === 0) { alert('未找到有效的日程数据'); return; }
                 const existingIds = new Set(schedules.map(s => s.id));
-                const newEvents = parsedEvents.filter(event => !existingIds.has(event.id));
-
-                if (newEvents.length === 0) {
-                    alert('所有日程都已存在，没有新数据导入');
-                    return;
-                }
-
-                // 确认导入
-                const confirmMessage = `找到 ${parsedEvents.length} 个日程，其中 ${newEvents.length} 个是新日程。是否确认导入？`;
-                if (confirm(confirmMessage)) {
+                const newEvents = parsed.filter(ev => !existingIds.has(ev.id));
+                if (newEvents.length === 0) { alert('所有日程都已存在，没有新数据导入'); return; }
+                if (confirm(`找到 ${parsed.length} 个日程，其中 ${newEvents.length} 个是新日程。是否确认导入？`)) {
                     setSchedules(prev => [...prev, ...newEvents]);
                     alert(`成功导入 ${newEvents.length} 个新日程！`);
                 }
-
-            } catch (err) {
-                console.error('ICS文件解析错误:', err);
-                alert('ICS文件解析失败：' + err.message);
-            }
+            } catch (err) { alert('ICS文件解析失败：' + err.message); }
             event.target.value = '';
         };
-        reader.onerror = () => {
-            alert('文件读取失败');
-            event.target.value = '';
-        };
+        reader.onerror = () => { alert('文件读取失败'); event.target.value = ''; };
         reader.readAsText(file);
     };
 
-    // GitHub Gist 同步功能
+    // ── Gist 同步操作 ────────────────────────────────────────────────────────
     const handleSyncToGist = async () => {
-        if (!gistToken) {
-            alert('请先配置 GitHub Personal Access Token');
-            return;
-        }
-
+        if (!gistToken) { alert('请先配置 GitHub Personal Access Token'); return; }
         setIsGistSyncing(true);
         try {
-            const userData = extractUserData(schedules);
+            const userData = extractUserDataFromSchedules(schedules);
             const result = await uploadToGist(gistToken, gistId, userData);
-
-            if (!gistId) {
-                setGistId(result.gistId);
-            }
-
+            if (!gistId) setGistId(result.gistId);
             alert(`数据已成功同步到 GitHub Gist！\n\n同步的数据：\n- 用户数据记录：${result.dataCount} 条\n- 文件大小：${result.fileSizeKB} KB`);
-        } catch (err) {
-            console.error('Gist 同步错误:', err);
-            alert('同步失败：' + err.message);
-        } finally {
-            setIsGistSyncing(false);
-        }
+        } catch (err) { alert('同步失败：' + err.message); }
+        finally { setIsGistSyncing(false); }
     };
 
     const handleLoadFromGist = async () => {
-        if (!gistToken || !gistId) {
-            alert('请先配置 GitHub Personal Access Token 和 Gist ID');
-            return;
-        }
-
+        if (!gistToken || !gistId) { alert('请先配置 GitHub Personal Access Token 和 Gist ID'); return; }
         setIsGistSyncing(true);
         try {
             const { userData, fileSizeKB } = await downloadFromGist(gistToken, gistId);
-            const currentUserData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
-            const { mergedData, addedCount, updatedCount } = mergeUserData(currentUserData, userData);
-
+            const current = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
+            const { mergedData, addedCount, updatedCount } = mergeUserData(current, userData);
             localStorage.setItem(USER_DATA_KEY, JSON.stringify(mergedData));
-            const newSchedules = reloadSchedules(mergedData);
-            setSchedules(newSchedules);
-
+            setSchedules(mergeSchedules(JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]'), mergedData));
             alert(`成功从 Gist 加载数据！\n\n- 新增：${addedCount} 条\n- 更新：${updatedCount} 条\n- 文件大小：${fileSizeKB} KB`);
-        } catch (err) {
-            console.error('Gist 读取错误:', err);
-            alert('读取失败：' + err.message);
-        } finally {
-            setIsGistSyncing(false);
-        }
+        } catch (err) { alert('读取失败：' + err.message); }
+        finally { setIsGistSyncing(false); }
     };
 
     const handleReplaceFromGist = async () => {
-        if (!gistToken || !gistId) {
-            alert('请先配置 GitHub Personal Access Token 和 Gist ID');
-            return;
-        }
-
-        if (!confirm('此操作将用 Gist 中的用户数据完全替换本地用户数据，确定继续吗？\n\n注意：基础日程库不会被影响。')) {
-            return;
-        }
-
+        if (!gistToken || !gistId) { alert('请先配置 GitHub Personal Access Token 和 Gist ID'); return; }
+        if (!confirm('此操作将用 Gist 中的用户数据完全替换本地用户数据，确定继续吗？\n\n注意：基础日程库不会被影响。')) return;
         setIsGistSyncing(true);
         try {
             const { userData, fileSizeKB } = await downloadFromGist(gistToken, gistId);
-
             localStorage.setItem(USER_DATA_KEY, JSON.stringify(userData));
-            const newSchedules = reloadSchedules(userData);
-            setSchedules(newSchedules);
-
+            setSchedules(mergeSchedules(JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]'), userData));
             alert(`成功从 Gist 恢复用户数据！\n\n- 用户数据记录：${Object.keys(userData).length} 条\n- 文件大小：${fileSizeKB} KB`);
-        } catch (err) {
-            console.error('Gist 读取错误:', err);
-            alert('读取失败：' + err.message);
-        } finally {
-            setIsGistSyncing(false);
-        }
+        } catch (err) { alert('读取失败：' + err.message); }
+        finally { setIsGistSyncing(false); }
     };
 
-    // Supabase 上传数据
+    // ── Supabase 同步操作 ────────────────────────────────────────────────────
     const handleUploadToSupabase = async () => {
-        if (!syncId || !syncId.trim()) {
-            alert('请先设置同步 ID');
-            return;
-        }
-
+        if (!syncId || !syncId.trim()) { alert('请先设置同步 ID'); return; }
         setIsSupabaseSyncing(true);
         try {
-            // 提取用户数据
-            const userData = {};
-
-            schedules.forEach(schedule => {
-                if (schedule.isUserCreated) {
-                    userData[schedule.id] = { ...schedule, isUserCreated: true };
-                } else if (schedule.isBaseSchedule) {
-                    const userModifications = {};
-                    if (schedule.completed) userModifications.completed = true;
-                    if (schedule.note) userModifications.note = schedule.note;
-                    if (schedule.link && schedule.link.trim()) {
-                        const isSystemLink = schedule.link === schedule.liveRoomUrl ||
-                            schedule.link === schedule.dynamicUrl ||
-                            schedule.link === schedule.icsUrl;
-                        if (!isSystemLink) {
-                            userModifications.link = schedule.link;
-                        }
-                    }
-                    if (schedule.isFavorite) userModifications.isFavorite = true;
-                    if (schedule.isAnime) userModifications.isAnime = true;
-
-                    if (Object.keys(userModifications).length > 0) {
-                        userData[schedule.id] = userModifications;
-                    }
-                }
-            });
+            const userData = extractUserDataFromSchedules(schedules);
 
             const dataCount = Object.keys(userData).length;
             const dataSizeKB = (new Blob([JSON.stringify(userData)]).size / 1024).toFixed(2);
 
-            // 如果使用默认配置，显示大小提示
             if (isUsingDefaultConfig()) {
-                const sizeWarning = dataSizeKB > 80 ? '\n\n⚠️ 数据接近 100 KB 限制，建议使用自定义 Supabase 服务器' : '';
-                if (!confirm(`准备上传数据到默认云同步服务\n\n用户数据记录：${dataCount} 条\n文件大小：${dataSizeKB} KB / 100 KB${sizeWarning}\n\n是否继续？`)) {
-                    setIsSupabaseSyncing(false);
-                    return;
+                const warn = dataSizeKB > 80 ? '\n\n⚠️ 数据接近 100 KB 限制，建议使用自定义 Supabase 服务器' : '';
+                if (!confirm(`准备上传数据到默认云同步服务\n\n用户数据记录：${dataCount} 条\n文件大小：${dataSizeKB} KB / 100 KB${warn}\n\n是否继续？`)) {
+                    setIsSupabaseSyncing(false); return;
                 }
             }
 
             await uploadToSupabase(userData, syncId);
-
             alert(`数据已成功上传到 Supabase！\n\n同步 ID: ${syncId}\n用户数据记录：${dataCount} 条\n文件大小：${dataSizeKB} KB${isUsingDefaultConfig() ? ' / 100 KB' : ''}`);
-
-            // 更新冷却时间
             setSyncCooldown(300);
-        } catch (err) {
-            console.error('Supabase 上传错误:', err);
-            alert('上传失败：' + err.message);
-        } finally {
-            setIsSupabaseSyncing(false);
-        }
+        } catch (err) { alert('上传失败：' + err.message); }
+        finally { setIsSupabaseSyncing(false); }
     };
 
-    // Supabase 下载数据
     const handleDownloadFromSupabase = async () => {
-        if (!syncId || !syncId.trim()) {
-            alert('请先设置同步 ID');
-            return;
-        }
-
+        if (!syncId || !syncId.trim()) { alert('请先设置同步 ID'); return; }
         setIsSupabaseSyncing(true);
         try {
             const result = await downloadFromSupabase(syncId);
             const userData = result.user_data;
+            if (!userData || typeof userData !== 'object') throw new Error('数据格式不正确');
 
-            if (!userData || typeof userData !== 'object') {
-                throw new Error('数据格式不正确');
-            }
-
-            // 获取当前用户数据
-            const currentUserData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
-
-            // 合并用户数据
-            let addedCount = 0;
-            let updatedCount = 0;
-
+            const current = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
+            let added = 0, updated = 0;
             Object.keys(userData).forEach(id => {
-                if (currentUserData[id]) {
-                    if (userData[id].isUserCreated) {
-                        currentUserData[id] = userData[id];
-                    } else {
-                        const existing = currentUserData[id];
-                        const imported = userData[id];
-
-                        if (imported.note) {
-                            if (existing.note && existing.note !== imported.note) {
-                                currentUserData[id].note = `${existing.note}\n---\n${imported.note}`;
-                            } else {
-                                currentUserData[id].note = imported.note;
-                            }
-                        }
-
-                        if (imported.completed) currentUserData[id].completed = true;
-                        if (imported.link) currentUserData[id].link = imported.link;
-                        if (imported.isFavorite) currentUserData[id].isFavorite = true;
-                        if (imported.isAnime) currentUserData[id].isAnime = true;
+                if (current[id]) {
+                    if (userData[id].isUserCreated) { current[id] = userData[id]; }
+                    else {
+                        const ex = current[id]; const im = userData[id];
+                        if (im.note) { if (ex.note && ex.note !== im.note) current[id].note = `${ex.note}\n---\n${im.note}`; else current[id].note = im.note; }
+                        if (im.completed) current[id].completed = true;
+                        if (im.link) current[id].link = im.link;
+                        if (im.isFavorite) current[id].isFavorite = true;
+                        if (im.isAnime) current[id].isAnime = true;
                     }
-                    updatedCount++;
-                } else {
-                    currentUserData[id] = userData[id];
-                    addedCount++;
-                }
+                    updated++;
+                } else { current[id] = userData[id]; added++; }
             });
 
-            // 保存合并后的用户数据
-            localStorage.setItem(USER_DATA_KEY, JSON.stringify(currentUserData));
+            localStorage.setItem(USER_DATA_KEY, JSON.stringify(current));
+            const base = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
+            setSchedules(mergeSchedules(base, current));
 
-            // 重新加载日程
-            const baseSchedules = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
-
-            const mergedSchedules = baseSchedules.map(baseItem => {
-                const userItem = currentUserData[baseItem.id];
-                return {
-                    ...baseItem,
-                    completed: userItem?.completed || baseItem.completed || false,
-                    note: userItem?.note || baseItem.note || '',
-                    link: userItem?.link || baseItem.link || '',
-                    isFavorite: userItem?.isFavorite || false,
-                    isAnime: userItem?.isAnime || baseItem.isAnime || false,
-                    isBaseSchedule: true
-                };
-            });
-
-            const userSchedules = Object.values(currentUserData)
-                .filter(item => item.isUserCreated)
-                .map(item => ({
-                    ...item,
-                    isAnime: item.isAnime || false,
-                    isFavorite: item.isFavorite || false
-                }));
-
-            setSchedules([...mergedSchedules, ...userSchedules]);
-
-            const updateTime = new Date(result.updated_at).toLocaleString('zh-CN');
-            alert(`成功从 Supabase 下载数据！\n\n同步 ID: ${syncId}\n新增：${addedCount} 条\n更新：${updatedCount} 条\n更新时间：${updateTime}`);
-
-            // 更新冷却时间
+            alert(`成功从 Supabase 下载数据！\n\n同步 ID: ${syncId}\n新增：${added} 条\n更新：${updated} 条\n更新时间：${new Date(result.updated_at).toLocaleString('zh-CN')}`);
             setSyncCooldown(300);
-        } catch (err) {
-            console.error('Supabase 下载错误:', err);
-            alert('下载失败：' + err.message);
-        } finally {
-            setIsSupabaseSyncing(false);
-        }
+        } catch (err) { alert('下载失败：' + err.message); }
+        finally { setIsSupabaseSyncing(false); }
     };
 
+    // 文本解析
+    const parseText = (text) => {
+        if (!text.trim()) return;
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l !== '');
+        const newSchedules = [];
+        let activeDate = '';
+        const dateRegex = /(\d{4}[\/\-]\d{2}[\/\-]\d{2})/;
+        const timeRegex = /^(\d{2}:\d{2})$/;
+        const fingerprint = (item) => `${item.date}|${item.time}|${item.subTitle}|${item.title}`.replace(/\s+/g, '');
+        const existing = new Set(schedules.map(fingerprint));
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const dM = line.match(dateRegex); if (dM) { activeDate = dM[1].replace(/-/g, '/'); continue; }
+            const tM = line.match(timeRegex);
+            if (tM && activeDate) {
+                const time = tM[1], type = lines[i + 1] || '未知', subTitle = lines[i + 2] || '';
+                const raw = lines[i + 3] || ''; const finalTitle = (raw === '动态' || !raw) ? subTitle : raw;
+                const fp = `${activeDate}|${time}|${subTitle}|${finalTitle}`.replace(/\s+/g, '');
+                if (existing.has(fp)) { i += 3; continue; }
+                let category = '其他'; const cs = subTitle + finalTitle;
+                if (cs.includes('贝拉')) category = '贝拉'; else if (cs.includes('嘉然')) category = '嘉然';
+                else if (cs.includes('乃琳')) category = '乃琳'; else if (cs.includes('思诺')) category = '思诺';
+                else if (cs.includes('心宜')) category = '心宜'; else if (cs.includes('A-SOUL')) category = 'A-SOUL';
+                else if (cs.includes('有点宜思') || cs.includes('心宜思诺') || cs.includes('小心思')) category = '小心思';
+                const id = `parse-${activeDate}-${time}-${Math.random().toString(36).substr(2, 4)}`.replace(/\s+/g, '');
+                newSchedules.push({ id, date: activeDate, time, type, subTitle, title: finalTitle, category, completed: false, note: '' });
+                existing.add(fp); i += 3;
+            }
+        }
+        if (newSchedules.length > 0) { setSchedules(prev => [...prev, ...newSchedules]); alert(`成功导入 ${newSchedules.length} 项新日程。`); setInputText(''); setView('calendar'); }
+        else if (text.trim()) alert('未发现新日程。');
+    };
+
+    // ── 公共 ScheduleCard props ───────────────────────────────────────────────
+    const scheduleCardProps = {
+        toggleComplete, toggleFavorite, handleBilibiliSearch,
+        setEditingNoteId, setTempNote, setTempLink,
+        setSchedules, setExternalLinkModal,
+        showSearchBtn, showDynamicBtn
+    };
+
+    // ── Render ────────────────────────────────────────────────────────────────
     return (
         <>
             <FirstTimeNotice />
             <NetworkStatus />
+
+            {/* 基础日程库拉取失败提示 */}
             {fetchError && (
                 <div className="fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg bg-red-500 text-white flex items-center gap-3">
                     <span>日程库拉取失败，请检查网络连接</span>
                     <button onClick={() => setFetchError(false)} className="text-white/80 hover:text-white text-lg leading-none">×</button>
                 </div>
             )}
+
+            {/* 自动同步 Toast */}
             {showAutoSyncToast && (
                 <div className="fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg bg-green-500 text-white flex items-center gap-3 animate-pulse">
                     <Icon name="check-circle-2" className="w-5 h-5" />
                     <span>{autoSyncToastMessage}</span>
                 </div>
             )}
-            <div className="flex flex-col h-screen transition-colors duration-300 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100">
-                <header
-                    className="border-b px-4 md:px-6 py-3 flex items-center justify-between shadow-sm shrink-0 bg-white dark:bg-slate-900 dark:border-slate-800 gap-4 text-slate-900 dark:text-slate-100">
-                    <div className="flex items-center gap-3 shrink-0">
-                        <Icon name="calendar" className="text-blue-500 w-5 h-5 md:w-6 md:h-6" />
-                        <h1 className="hidden md:block text-lg md:text-xl font-bold tracking-tight">枝江追番表</h1>
-                    </div>
-                    <div className="flex gap-1">
-                        <button
-                            onClick={() => setView('calendar')}
-                            className={`px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${view === 'calendar' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
-                        >
-                            <Icon name="grid" className="w-4 h-4 shrink-0" />
-                            <span className="hidden sm:inline">日历视图</span>
-                        </button>
-                        <button
-                            onClick={() => setView('anime')}
-                            className={`px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${view === 'anime' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
-                        >
-                            <Icon name="tv" className="w-4 h-4 shrink-0" />
-                            <span className="hidden sm:inline">追番表</span>
-                        </button>
-                        <button
-                            onClick={() => setView('links')}
-                            className={`px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${view === 'links' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
-                        >
-                            <Icon name="layout-grid" className="w-4 h-4 shrink-0" />
-                            <span className="hidden sm:inline">快捷链接</span>
-                        </button>
-                    </div>
-                    <div className="relative flex-1 max-w-md">
-                        <div
-                            className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                            <Icon name="search" className="w-4 h-4" />
-                        </div>
-                        <input type="text" placeholder="搜索日程、成员、备注..."
-                            className="w-full pl-10 pr-4 py-1.5 md:py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-full text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
-                            value={searchQuery} onChange={(e) => {
-                                setSearchQuery(e.target.value); if (e.target.value.trim())
-                                    setView('search'); else if (view === 'search') setView('calendar');
-                            }}
-                        />
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                        <button
-                            onClick={() => setThemeMode(themeMode === 'dark' ? 'light' : 'dark')}
-                            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-400"
-                        >
-                            {themeMode === 'dark' ? <Icon name="sun" /> : <Icon name="moon" />}
-                        </button>
-                        <button
-                            onClick={() => setView(view === 'settings' ? 'calendar' : 'settings')}
-                            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-400"
-                        >
-                            {view === 'settings' ? <Icon name="x" /> : <Icon name="settings" />}
-                        </button>
-                    </div>
-                </header>
 
+            <div className="flex flex-col h-screen transition-colors duration-300 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+                {/* 顶部导航 */}
+                <AppHeader
+                    view={view}
+                    setView={setView}
+                    searchQuery={searchQuery}
+                    setSearchQuery={setSearchQuery}
+                    themeMode={themeMode}
+                    toggleTheme={toggleTheme}
+                />
+
+                {/* 主内容区 */}
                 <main className="flex-1 overflow-hidden relative pb-10">
                     {view === 'calendar' && (
-                        <div className="h-full flex flex-col p-3 md:p-6 space-y-4">
-                            <div className="flex items-center justify-between gap-2">
-                                <div className="flex flex-wrap items-center gap-2 md:gap-4">
-                                    <h2 className="text-sm md:text-lg font-bold min-w-[140px]">{weekDays[0]} - {weekDays[6]}
-                                    </h2>
-                                    <div
-                                        className="flex border rounded-lg shadow-sm overflow-hidden dark:border-slate-700 bg-white dark:bg-slate-800">
-                                        <button onClick={() => setCurrentDate(prev => {
-                                            const d = new Date(prev);
-                                            d.setDate(d.getDate() - 7); return d;
-                                        })} className="p-1.5 md:p-2 border-r
-                                    dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600
-                                    dark:text-slate-400">
-                                            <Icon name="chevron-left" />
-                                        </button>
-                                        <button onClick={() => setCurrentDate(toZeroDate())} className="px-3 py-1 text-xs
-                                    md:text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600
-                                    dark:text-slate-400">本周</button>
-                                        <div
-                                            className="date-input-wrapper border-l dark:border-slate-700 px-2 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400">
-                                            <Icon name="calendar-days" className="w-4 h-4" />
-                                            <input type="date" className="invisible-date-input" onChange={e => {
-                                                if
-                                                    (e.target.value) jumpToDate(e.target.value);
-                                            }} />
-                                        </div>
-                                        <button onClick={() => setCurrentDate(prev => {
-                                            const d = new Date(prev);
-                                            d.setDate(d.getDate() + 7); return d;
-                                        })} className="p-1.5 md:p-2 border-l
-                                    dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600
-                                    dark:text-slate-400">
-                                            <Icon name="chevron-right" />
-                                        </button>
-                                    </div>
-                                </div>
-                                <div className="flex gap-2">
-                                    <button onClick={handleSyncIcs} disabled={isSyncing} className={`hidden flex items-center gap-1.5
-                                px-3 py-1.5 ${isSyncing ? 'bg-slate-400' : 'bg-emerald-600 hover:bg-emerald-700'}
-                                text-white rounded-lg text-xs md:text-sm font-bold shadow-md transition-all shrink-0`}>
-                                        <Icon name="refresh" className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                                        <span className="hidden sm:inline">{isSyncing ? '同步中...' : '同步日历订阅'}</span>
-                                    </button>
-                                    {view === 'calendar' && (
-                                        <>
-                                            <button onClick={() => {
-                                                setNewSchedule({
-                                                    date: formatDateString(new Date()),
-                                                    time: '20:00',
-                                                    type: '直播',
-                                                    subTitle: '',
-                                                    title: '',
-                                                    category: '嘉然',
-                                                    isAnime: false,
-                                                    link: ''
-                                                });
-                                                setIsAddModalOpen(true);
-                                            }} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg
-                                text-xs md:text-sm font-bold shadow-md hover:bg-blue-700 transition-all shrink-0">
-                                                <Icon name="plus" className="w-3.5 h-3.5" /> <span
-                                                    className="hidden sm:inline">添加日历日程</span>
-                                            </button>
-                                            <button
-                                                onClick={handleUpdateBaseSchedules}
-                                                disabled={isLoadingBase}
-                                                className={`flex items-center gap-1.5 px-3 py-1.5 ${isLoadingBase ? 'bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700'} text-white rounded-lg text-xs md:text-sm font-bold shadow-md transition-all shrink-0`}
-                                            >
-                                                <Icon name="refresh" className={`w-3.5 h-3.5 ${isLoadingBase ? 'animate-spin' : ''}`} />
-                                                <span className="hidden sm:inline">{isLoadingBase ? '更新中...' : '更新基础日程库'}</span>
-                                            </button>
-                                            {/* 数据同步下拉菜单 */}
-                                            <div className="relative" onClick={(e) => e.stopPropagation()}>
-                                                <button
-                                                    onClick={() => setShowSyncMenu(!showSyncMenu)}
-                                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs md:text-sm font-bold shadow-md hover:bg-emerald-700 transition-all shrink-0"
-                                                >
-                                                    <Icon name="upload" className="w-3.5 h-3.5" />
-                                                    <span className="hidden sm:inline">数据同步</span>
-                                                </button>
-
-                                                {showSyncMenu && (
-                                                    <div className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-lg border dark:border-slate-700 py-1 z-50">
-                                                        {/* 导出本地备份 */}
-                                                        <button onClick={() => {
-                                                            setShowSyncMenu(false);
-                                                            const userData = {};
-                                                            schedules.forEach(schedule => {
-                                                                if (schedule.isUserCreated) {
-                                                                    userData[schedule.id] = { ...schedule, isUserCreated: true };
-                                                                } else if (schedule.isBaseSchedule) {
-                                                                    const userModifications = {};
-                                                                    if (schedule.completed) userModifications.completed = true;
-                                                                    if (schedule.note) userModifications.note = schedule.note;
-                                                                    if (schedule.link && schedule.link.trim()) {
-                                                                        const isSystemLink = schedule.link === schedule.liveRoomUrl ||
-                                                                            schedule.link === schedule.dynamicUrl ||
-                                                                            schedule.link === schedule.icsUrl;
-                                                                        if (!isSystemLink) {
-                                                                            userModifications.link = schedule.link;
-                                                                        }
-                                                                    }
-                                                                    if (schedule.isFavorite) userModifications.isFavorite = true;
-                                                                    if (schedule.isAnime) userModifications.isAnime = true;
-
-                                                                    if (Object.keys(userModifications).length > 0) {
-                                                                        userData[schedule.id] = userModifications;
-                                                                    }
-                                                                }
-                                                            });
-
-                                                            const blob = new Blob([JSON.stringify(userData, null, 2)], { type: 'application/json' });
-                                                            const a = document.createElement('a');
-                                                            a.href = URL.createObjectURL(blob);
-                                                            const timestamp = new Date().toISOString().replace(/[\-:T.]/g, '').slice(0, 14);
-                                                            a.download = `user-data-${timestamp}.json`;
-                                                            a.click();
-                                                        }} className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
-                                                            <Icon name="download" className="w-4 h-4 text-emerald-500" />
-                                                            导出本地备份
-                                                        </button>
-
-                                                        <div className="border-t dark:border-slate-700 my-1"></div>
-
-                                                        {/* Gist 上传 */}
-                                                        <button onClick={() => {
-                                                            setShowSyncMenu(false);
-                                                            if (!gistToken) {
-                                                                alert('请先在设置中配置 GitHub Token');
-                                                                setView('settings');
-                                                                return;
-                                                            }
-                                                            handleSyncToGist();
-                                                        }} className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
-                                                            <Icon name="upload" className="w-4 h-4 text-purple-500" />
-                                                            上传到 Gist
-                                                        </button>
-
-                                                        {/* Supabase 上传 */}
-                                                        <button onClick={() => {
-                                                            setShowSyncMenu(false);
-                                                            if (!syncId) {
-                                                                alert('请先在设置中配置同步 ID');
-                                                                setView('settings');
-                                                                return;
-                                                            }
-                                                            handleUploadToSupabase();
-                                                        }} className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
-                                                            <Icon name="upload" className="w-4 h-4 text-green-500" />
-                                                            上传到云端
-                                                        </button>
-
-                                                        <div className="border-t dark:border-slate-700 my-1"></div>
-
-                                                        {/* 跳转到设置 */}
-                                                        <button onClick={() => {
-                                                            setShowSyncMenu(false);
-                                                            setView('settings');
-                                                        }} className="w-full px-4 py-2 text-left text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
-                                                            <Icon name="settings" className="w-4 h-4" />
-                                                            更多同步设置...
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </>
-                                    )}
-                                    {view === 'anime' && (
-                                        <button onClick={() => {
-                                            setNewSchedule({
-                                                date: '追番/追番',
-                                                time: '追番',
-                                                type: '追番',
-                                                subTitle: '',
-                                                title: '',
-                                                category: '其他',
-                                                isAnime: true,
-                                                link: ''
-                                            });
-                                            setIsAddModalOpen(true);
-                                        }}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg
-                                text-xs md:text-sm font-bold shadow-md hover:bg-orange-700 transition-all shrink-0"
-                                        >
-                                            <Icon name="plus" className="w-3.5 h-3.5" /> <span
-                                                className="hidden sm:inline">添加追番日程</span>
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="flex-1 overflow-y-auto custom-scrollbar">
-                                <div className="grid grid-cols-1 md:grid-cols-7 gap-4 min-w-max md:min-w-0">
-                                    {weekDays.map((dayStr, idx) => {
-                                        const daySchedules = schedules.filter(s => s.date === dayStr).sort((a, b) =>
-                                            a.time.localeCompare(b.time));
-                                        const isToday = formatDateString(new Date()) === dayStr;
-                                        const dayNames = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-                                        return (
-                                            <div key={dayStr} className="flex flex-col min-w-[280px] md:min-w-0 h-full overflow-hidden">
-                                                <div className={`flex items-baseline gap-2 pb-2 px-1 shrink-0 ${isToday
-                                                    ? 'text-blue-500' : 'text-slate-500 dark:text-slate-400'}`}>
-                                                    <span className="text-sm md:text-base font-bold">{dayNames[idx]}</span>
-                                                    <span
-                                                        className="text-[10px] md:text-xs opacity-70">{dayStr.split('/').slice(1).join('/')}</span>
-                                                    {isToday &&
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />}
-                                                </div>
-                                                <div className="flex-1 space-y-1 overflow-y-auto custom-scrollbar pr-1">
-                                                    {daySchedules.length > 0 ? daySchedules.map(item => (
-                                                        <ScheduleCard
-                                                            key={item.id}
-                                                            item={item}
-                                                            toggleComplete={toggleComplete}
-                                                            toggleFavorite={toggleFavorite}
-                                                            handleBilibiliSearch={handleBilibiliSearch}
-                                                            setEditingNoteId={setEditingNoteId}
-                                                            setTempNote={setTempNote}
-                                                            setTempLink={setTempLink}
-                                                            setSchedules={setSchedules}
-                                                            setExternalLinkModal={setExternalLinkModal}
-                                                            showSearchBtn={showSearchBtn}
-                                                            showDynamicBtn={showDynamicBtn}
-                                                        />
-                                                    )) : <div
-                                                        className="h-24 flex items-center justify-center italic text-[10px] text-slate-300 dark:text-slate-800 border-2 border-dashed border-slate-50 dark:border-slate-900 rounded-xl">
-                                                        暂无</div>}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        </div>
+                        <CalendarView
+                            weekDays={weekDays}
+                            schedules={schedules}
+                            isLoadingBase={isLoadingBase}
+                            isSyncing={isSyncing}
+                            currentDate={currentDate}
+                            setCurrentDate={setCurrentDate}
+                            setView={setView}
+                            setIsAddModalOpen={setIsAddModalOpen}
+                            setNewSchedule={setNewSchedule}
+                            handleUpdateBaseSchedules={handleUpdateBaseSchedules}
+                            handleSyncIcs={handleSyncIcs}
+                            showSyncMenu={showSyncMenu}
+                            setShowSyncMenu={setShowSyncMenu}
+                            gistToken={gistToken}
+                            syncId={syncId}
+                            handleSyncToGist={handleSyncToGist}
+                            handleUploadToSupabase={handleUploadToSupabase}
+                            isGistSyncing={isGistSyncing}
+                            {...scheduleCardProps}
+                        />
                     )}
 
                     {view === 'anime' && (
-                        <div
-                            className="h-full max-w-3xl mx-auto p-4 md:p-8 flex flex-col overflow-hidden text-slate-900 dark:text-slate-100">
-                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                                <Icon name="calendar-days" className="w-5 h-5 text-orange-500" /> 追番表 ({schedules.filter(s =>
-                                    s.isAnime || s.isFavorite).length})
-                            </h3>
-                            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-                                    {schedules
-                                        .filter(item => item.isAnime || item.isFavorite)
-                                        .sort((a, b) => new Date(b.date.replace(/\//g, '-')) - new Date(a.date.replace(/\//g, '-')))
-                                        .map(item => (
-                                            <ScheduleCard
-                                                key={item.id}
-                                                item={item}
-                                                showDate={false}
-                                                showMoveButton={false}
-                                                toggleComplete={toggleComplete}
-                                                toggleFavorite={toggleFavorite}
-                                                handleBilibiliSearch={handleBilibiliSearch}
-                                                setEditingNoteId={setEditingNoteId}
-                                                setTempNote={setTempNote}
-                                                setTempLink={setTempLink}
-                                                setSchedules={setSchedules}
-                                                setExternalLinkModal={setExternalLinkModal}
-                                                showSearchBtn={showSearchBtn}
-                                                showDynamicBtn={showDynamicBtn}
-                                            />
-                                        ))
-                                    }
-                                    {schedules.filter(item => item.isAnime || item.isFavorite).length === 0 && (
-                                        <div
-                                            className="col-span-2 flex flex-col items-center justify-center py-16 text-slate-400 dark:text-slate-600">
-                                            <Icon name="calendar-days" className="w-16 h-16 mb-4" />
-                                            <p className="text-lg font-bold mb-2">追番表为空</p>
-                                            <p className="text-sm text-center max-w-md">点击下方按钮添加追番日程</p>
-                                            <button onClick={() => {
-                                                setNewSchedule({
-                                                    date: '追番/追番',
-                                                    time: '追番',
-                                                    type: '追番',
-                                                    subTitle: '',
-                                                    title: '',
-                                                    category: '其他',
-                                                    isAnime: true,
-                                                    link: ''
-                                                });
-                                                setIsAddModalOpen(true);
-                                            }}
-                                                className="mt-4 px-4 py-2 bg-orange-500 text-white rounded-lg font-bold
-                                    hover:bg-orange-600 transition-all"
-                                            >
-                                                添加追番日程
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
+                        <AnimeView
+                            schedules={schedules}
+                            setIsAddModalOpen={setIsAddModalOpen}
+                            setNewSchedule={setNewSchedule}
+                            {...scheduleCardProps}
+                        />
                     )}
 
                     {view === 'links' && (
@@ -1851,1024 +541,91 @@ function App() {
                     )}
 
                     {view === 'search' && (
-                        <div
-                            className="h-full max-w-3xl mx-auto p-4 md:p-8 flex flex-col overflow-hidden text-slate-900 dark:text-slate-100">
-                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                                <Icon name="search" className="w-5 h-5" /> 搜索结果 ({filteredSchedules.length})
-                            </h3>
-                            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-                                    {filteredSchedules.map(item => (
-                                        <ScheduleCard
-                                            key={item.id}
-                                            item={item}
-                                            showDate={true}
-                                            toggleComplete={toggleComplete}
-                                            toggleFavorite={toggleFavorite}
-                                            handleBilibiliSearch={handleBilibiliSearch}
-                                            setEditingNoteId={setEditingNoteId}
-                                            setTempNote={setTempNote}
-                                            setTempLink={setTempLink}
-                                            setSchedules={setSchedules}
-                                            setExternalLinkModal={setExternalLinkModal}
-                                            showSearchBtn={showSearchBtn}
-                                            showDynamicBtn={showDynamicBtn}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
+                        <SearchView filteredSchedules={filteredSchedules} {...scheduleCardProps} />
                     )}
 
                     {view === 'changelog' && (
-                        <div className="h-full overflow-y-auto custom-scrollbar p-4 md:p-8">
-                            <ChangelogView />
-                        </div>
+                        <SettingsView view="changelog" setView={setView} schedules={schedules} setSchedules={setSchedules} />
                     )}
 
                     {view === 'settings' && (
-                        <div
-                            className="h-full max-w-2xl mx-auto p-4 md:p-8 overflow-y-auto custom-scrollbar space-y-6 text-slate-900 dark:text-slate-100">
-
-                            <SettingsSection
-                                title="外观选项"
-                                icon="palette"
-                                iconColor="text-purple-500"
-                                description="自定义日程的显示样式和配色方案"
-                            >
-                                <div className="space-y-4">
-                                    <div className="p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <div className="font-medium">显示模式</div>
-                                                <div className="text-xs text-slate-500">
-                                                    {displayMode === 'single' ? '多成员日程使用主要成员颜色' : '多成员日程用渐变色显示所有成员颜色'}
-                                                </div>
-                                            </div>
-                                            <select
-                                                className="px-3 py-2 border dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-800 outline-none text-slate-900 dark:text-slate-100"
-                                                value={displayMode}
-                                                onChange={(e) => {
-                                                    setDisplayMode(e.target.value);
-                                                    localStorage.setItem(DISPLAY_MODE_KEY, e.target.value);
-                                                }}
-                                            >
-                                                <option value="single">单一颜色模式</option>
-                                                <option value="multi-color">多色分割模式</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                        <div>
-                                            <div className="font-medium">组合色配置</div>
-                                            <div className="text-xs text-slate-500">
-                                                {useSpecialGroupColor ? '使用A-SOUL和小心思的专用组合色（仅在单一色模式下生效）' : '按照多成员组合逻辑显示'}
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => {
-                                                const newValue = !useSpecialGroupColor;
-                                                setUseSpecialGroupColor(newValue);
-                                                localStorage.setItem(SPECIAL_GROUP_COLOR_KEY, newValue.toString());
-                                            }}
-                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${useSpecialGroupColor ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
-                                        >
-                                            <span
-                                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useSpecialGroupColor ? 'translate-x-6' : 'translate-x-1'}`}
-                                            />
-                                        </button>
-                                    </div>
-
-                                    <div className="flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                        <div>
-                                            <div className="font-medium">显示搜索按钮</div>
-                                            <div className="text-xs text-slate-500">
-                                                {showSearchBtn ? '在过期日程上显示B站搜索按钮' : '已隐藏'}
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => {
-                                                const newValue = !showSearchBtn;
-                                                setShowSearchBtn(newValue);
-                                                localStorage.setItem(SHOW_SEARCH_BTN_KEY, newValue.toString());
-                                            }}
-                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${showSearchBtn ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
-                                        >
-                                            <span
-                                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showSearchBtn ? 'translate-x-6' : 'translate-x-1'}`}
-                                            />
-                                        </button>
-                                    </div>
-
-                                    <div className="flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                        <div>
-                                            <div className="font-medium">显示动态按钮</div>
-                                            <div className="text-xs text-slate-500">
-                                                {showDynamicBtn ? '显示B站动态跳转按钮' : '已隐藏'}
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => {
-                                                const newValue = !showDynamicBtn;
-                                                setShowDynamicBtn(newValue);
-                                                localStorage.setItem(SHOW_DYNAMIC_BTN_KEY, newValue.toString());
-                                            }}
-                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${showDynamicBtn ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
-                                        >
-                                            <span
-                                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showDynamicBtn ? 'translate-x-6' : 'translate-x-1'}`}
-                                            />
-                                        </button>
-                                    </div>
-
-                                    <div className="p-4 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <div className="font-medium">自定义成员颜色</div>
-                                            <button
-                                                onClick={() => {
-                                                    if (confirm('确定要恢复所有成员的默认颜色吗？')) {
-                                                        setCustomColors({});
-                                                    }
-                                                }}
-                                                className="text-xs px-2 py-1 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 transition-colors"
-                                            >
-                                                恢复默认
-                                            </button>
-                                        </div>
-                                        <div className="text-xs text-slate-500 mb-3">点击颜色块可以自定义每个成员的背景色(组合颜色暂未完工)</div>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            {Object.keys(DEFAULT_MEMBER_CONFIG).map(member => {
-                                                const currentColor = customColors[member]?.color || DEFAULT_MEMBER_CONFIG[member].color;
-                                                return (
-                                                    <div key={member} className="flex items-center gap-2">
-                                                        <input
-                                                            type="color"
-                                                            value={currentColor}
-                                                            onChange={(e) => {
-                                                                setCustomColors(prev => ({
-                                                                    ...prev,
-                                                                    [member]: {
-                                                                        color: e.target.value,
-                                                                        textColor: '#FFFFFF'
-                                                                    }
-                                                                }));
-                                                            }}
-                                                            className="w-10 h-10 rounded cursor-pointer border-2 border-slate-300 dark:border-slate-600"
-                                                            title={`选择${member}的颜色`}
-                                                        />
-                                                        <div className="flex-1">
-                                                            <div className="text-sm font-medium">{member}</div>
-                                                            <div className="text-xs text-slate-500 font-mono">{currentColor}</div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </div>
-                            </SettingsSection>
-
-                            <SettingsSection
-                                title="基础日程库"
-                                icon="refresh"
-                                iconColor="text-blue-500"
-                                description="从 GitHub 同步基础日程库（约2k条日程）"
-                            >
-                                <div className="space-y-4">
-                                    <div className="p-4 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-                                        <div className="text-sm space-y-2">
-                                            <div className="flex justify-between">
-                                                <span className="text-slate-600 dark:text-slate-400">基础日程数量：</span>
-                                                <span className="font-bold">{schedules.filter(s => s.isBaseSchedule).length} 条</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-slate-600 dark:text-slate-400">用户日程数量：</span>
-                                                <span className="font-bold">{schedules.filter(s => s.isUserCreated).length} 条</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-slate-600 dark:text-slate-400">缓存版本：</span>
-                                                <span className="font-mono text-xs">{localStorage.getItem(BASE_SCHEDULES_VERSION_KEY) || '未缓存'}</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-slate-600 dark:text-slate-400">最后获取：</span>
-                                                <span className="font-mono text-xs">
-                                                    {(() => {
-                                                        const lastFetch = localStorage.getItem(BASE_SCHEDULES_LAST_FETCH_KEY);
-                                                        if (!lastFetch) return '未记录';
-                                                        const date = new Date(parseInt(lastFetch, 10));
-                                                        return date.toLocaleString('zh-CN', {
-                                                            month: '2-digit',
-                                                            day: '2-digit',
-                                                            hour: '2-digit',
-                                                            minute: '2-digit'
-                                                        });
-                                                    })()}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <button
-                                        onClick={handleUpdateBaseSchedules}
-                                        disabled={isLoadingBase}
-                                        className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
-                                    >
-                                        {isLoadingBase ? <Icon name="refresh" className="w-4 h-4 animate-spin" /> : <Icon name="refresh" className="w-4 h-4" />}
-                                        {isLoadingBase ? '更新中...' : '手动更新基础日程库'}
-                                    </button>
-
-                                    <div className="text-xs text-slate-500 space-y-1">
-                                        <p>• 基础日程库会在每次打开页面时自动更新</p>
-                                        <p>• 你的备注、完成状态和自己添加的日程不会丢失</p>
-                                        <p>• 如果网络失败，会使用缓存的日程数据</p>
-                                    </div>
-                                </div>
-                            </SettingsSection>
-
-                            <SettingsSection
-                                title="数据管理"
-                                icon="download"
-                                iconColor="text-blue-500"
-                                description="导入导出数据，管理本地存储"
-                            >
-                                <div className="space-y-4">
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <button onClick={() => {
-                                            // 提取用户数据
-                                            const userData = {};
-
-                                            schedules.forEach(schedule => {
-                                                if (schedule.isUserCreated) {
-                                                    // 用户创建的日程，保存完整数据
-                                                    userData[schedule.id] = { ...schedule, isUserCreated: true };
-                                                } else if (schedule.isBaseSchedule) {
-                                                    // 基础日程，只保存用户修改的部分
-                                                    const userModifications = {};
-                                                    if (schedule.completed) userModifications.completed = true;
-                                                    if (schedule.note) userModifications.note = schedule.note;
-                                                    // 保存用户自定义的链接（排除系统自带的链接）
-                                                    if (schedule.link && schedule.link.trim()) {
-                                                        const isSystemLink = schedule.link === schedule.liveRoomUrl ||
-                                                            schedule.link === schedule.dynamicUrl ||
-                                                            schedule.link === schedule.icsUrl;
-                                                        if (!isSystemLink) {
-                                                            userModifications.link = schedule.link;
-                                                        }
-                                                    }
-                                                    if (schedule.isFavorite) userModifications.isFavorite = true;
-                                                    if (schedule.isAnime) userModifications.isAnime = true;
-
-                                                    if (Object.keys(userModifications).length > 0) {
-                                                        userData[schedule.id] = userModifications;
-                                                    }
-                                                }
-                                            });
-
-                                            const blob = new Blob([JSON.stringify(userData, null, 2)], { type: 'application/json' });
-                                            const a = document.createElement('a');
-                                            a.href = URL.createObjectURL(blob);
-                                            const timestamp = new Date().toISOString().replace(/[\-:T.]/g, '').slice(0, 14);
-                                            a.download = `user-data-${timestamp}.json`;
-                                            a.click();
-                                        }} className="flex items-center justify-center gap-2 p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md transition-all">
-                                            <Icon name="download" /> 导出用户数据
-                                        </button>
-                                        <button onClick={() => fileInputRef.current.click()} className="flex items-center justify-center gap-2 p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-md transition-all">
-                                            <Icon name="upload" /> 导入用户数据
-                                            <input type="file" ref={fileInputRef} onChange={handleImportJSON} accept=".json" className="hidden" />
-                                        </button>
-                                    </div>
-                                    <div className="text-xs text-slate-500 mb-3 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg">
-                                        <strong>说明：</strong>导出的是用户个性化数据（完成状态、备注、用户创建的日程等），不包含基础日程库。
-                                    </div>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <button onClick={() => {
-                                            // 仅导出用户额外添加的日程
-                                            const userCreatedSchedules = schedules
-                                                .filter(schedule => schedule.isUserCreated)
-                                                .map(schedule => ({ ...schedule }));
-
-                                            if (userCreatedSchedules.length === 0) {
-                                                alert('没有用户创建的日程可以导出');
-                                                return;
-                                            }
-
-                                            const blob = new Blob([JSON.stringify(userCreatedSchedules, null, 2)], { type: 'application/json' });
-                                            const a = document.createElement('a');
-                                            a.href = URL.createObjectURL(blob);
-                                            const timestamp = new Date().toISOString().replace(/[\-:T.]/g, '').slice(0, 14);
-                                            a.download = `user-created-schedules-${timestamp}.json`;
-                                            a.click();
-                                        }} className="flex items-center justify-center gap-2 p-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold shadow-md transition-all">
-                                            <Icon name="download" /> 仅导出添加的日程
-                                        </button>
-                                        <button onClick={() => {
-                                            // 导出除完成状态、跳转链接以外的日程
-                                            const cleanedSchedules = schedules.map(schedule => {
-                                                const cleaned = { ...schedule };
-                                                // 移除完成状态
-                                                delete cleaned.completed;
-                                                // 移除所有链接相关字段
-                                                // delete cleaned.link;
-                                                // delete cleaned.liveRoomUrl;
-                                                // delete cleaned.dynamicUrl;
-                                                // delete cleaned.icsUrl;
-                                                return cleaned;
-                                            });
-
-                                            const blob = new Blob([JSON.stringify(cleanedSchedules, null, 2)], { type: 'application/json' });
-                                            const a = document.createElement('a');
-                                            a.href = URL.createObjectURL(blob);
-                                            const timestamp = new Date().toISOString().replace(/[\-:T.]/g, '').slice(0, 14);
-                                            a.download = `schedules-clean-${timestamp}.json`;
-                                            a.click();
-                                        }} className="flex items-center justify-center gap-2 p-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md transition-all">
-                                            <Icon name="download" /> 导出除完成状态以外的日程
-                                        </button>
-                                    </div>
-                                    <div className="text-xs text-slate-500 mb-3 p-3 bg-purple-50 dark:bg-purple-900/10 rounded-lg">
-                                        <strong>说明：</strong>仅添加的日程可用于分享日程表外的视频，除完成状态以外的日程则可以连同日程表中的备注一同分享
-                                    </div>
-                                    <div className="grid grid-cols-1 gap-4">
-                                        <button onClick={() => {
-                                            if (confirm('确定清空所有用户数据？\n\n这将清除：\n- 所有完成状态\n- 所有备注\n- 所有用户创建的日程\n- 所有收藏\n\n基础日程库不会被删除。')) {
-                                                // 只清空用户数据
-                                                localStorage.removeItem(USER_DATA_KEY);
-                                                // 重新加载基础日程库
-                                                const baseSchedules = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
-                                                setSchedules(baseSchedules.map(item => ({
-                                                    ...item,
-                                                    completed: false,
-                                                    note: '',
-                                                    link: item.link || '',
-                                                    isFavorite: false,
-                                                    isAnime: item.isAnime || false,
-                                                    isBaseSchedule: true
-                                                })));
-                                                alert('用户数据已清空');
-                                            }
-                                        }} className="flex items-center justify-center gap-2 p-3 text-red-600 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-xl font-bold transition-all">
-                                            <Icon name="trash-2" /> 清空用户数据
-                                        </button>
-                                    </div>
-
-                                    <div className="hidden p-4 rounded-lg border border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-900/10">
-                                        <div className="font-medium text-orange-800 dark:text-orange-300 mb-2">测试功能：删除 localStorage</div>
-                                        <div className="text-xs text-orange-600 dark:text-orange-400 mb-3">
-                                            此按钮用于测试 IndexedDB 备份恢复功能。删除后刷新页面，系统将自动从 IndexedDB 恢复数据。
-                                        </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            <button onClick={() => {
-                                                if (confirm('⚠️ 测试功能\n\n这将删除 localStorage 中的用户数据，但 IndexedDB 备份会保留。\n\n刷新页面后，系统将自动从 IndexedDB 恢复数据。\n\n确定要继续吗？')) {
-                                                    localStorage.removeItem(USER_DATA_KEY);
-                                                    console.log('[测试] localStorage 用户数据已删除');
-                                                    alert('localStorage 已删除！\n\n请刷新页面测试 IndexedDB 恢复功能。\n\n打开控制台可以看到恢复日志。');
-                                                }
-                                            }} className="flex items-center justify-center gap-2 p-3 text-orange-700 dark:text-orange-300 bg-orange-100 dark:bg-orange-900/20 hover:bg-orange-200 dark:hover:bg-orange-900/30 rounded-xl font-bold transition-all">
-                                                <Icon name="trash-2" /> 删除 localStorage
-                                            </button>
-                                            <button onClick={async () => {
-                                                if (confirm('⚠️ 重置 IndexedDB\n\n这将删除并重建 IndexedDB 数据库。\n\n如果遇到 IndexedDB 错误，可以使用此功能修复。\n\n确定要继续吗？')) {
-                                                    try {
-                                                        await deleteDatabase();
-                                                        console.log('[测试] IndexedDB 数据库已删除');
-                                                        alert('IndexedDB 已重置！\n\n刷新页面后将重新创建数据库。');
-                                                    } catch (error) {
-                                                        console.error('[测试] 删除 IndexedDB 失败:', error);
-                                                        alert('删除失败：' + error.message);
-                                                    }
-                                                }
-                                            }} className="flex items-center justify-center gap-2 p-3 text-orange-700 dark:text-orange-300 bg-orange-100 dark:bg-orange-900/20 hover:bg-orange-200 dark:hover:bg-orange-900/30 rounded-xl font-bold transition-all">
-                                                <Icon name="refresh" /> 重置 IndexedDB
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-1 gap-4 hidden">
-                                        <button onClick={() => {
-                                            if (confirm('⚠️ 危险操作：清除所有数据\n\n这将清除：\n- 所有用户数据（完成状态、备注、用户日程等）\n- 基础日程库缓存\n- 所有本地存储数据\n\n确定要继续吗？')) {
-                                                // 清空所有数据，默认隐藏，需要显示请删除div className中的hidden
-                                                // 清除所有相关的 localStorage 数据
-                                                localStorage.removeItem(USER_DATA_KEY);
-                                                localStorage.removeItem(BASE_SCHEDULES_KEY);
-                                                localStorage.removeItem(BASE_SCHEDULES_VERSION_KEY);
-                                                localStorage.removeItem(BASE_SCHEDULES_LAST_FETCH_KEY);
-                                                localStorage.removeItem(STORAGE_KEY);
-                                                localStorage.removeItem(ICS_CONFIG_KEY);
-
-                                                // 清空日程列表
-                                                setSchedules([]);
-
-                                                alert('所有数据已清除！');
-                                            }
-                                        }} className="flex items-center justify-center gap-2 p-3 text-white bg-red-600 hover:bg-red-700 rounded-xl font-bold shadow-md transition-all">
-                                            <Icon name="trash-2" /> 🔥 清除所有数据（测试用）
-                                        </button>
-                                    </div>
-                                </div>
-                            </SettingsSection>
-
-                            <SettingsSection
-                                title="GitHub Gist 云同步"
-                                icon="refresh"
-                                iconColor="text-purple-500"
-                                description="使用 GitHub Gist 在多设备间同步用户数据"
-                            >
-                                <div className="text-xs text-slate-500 mb-3 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg">
-                                    <strong>说明：</strong>只同步用户个性化数据（完成状态、备注、用户创建的日程等），不包含基础日程库。
-                                </div>
-                                <p className="text-xs text-slate-500 mb-4 italic">
-                                    需要 GitHub Personal Access Token（需要 gist 权限）。
-                                    <a
-                                        href="https://github.com/settings/tokens/new?description=ASoul%20Calendar&scopes=gist"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-blue-600 dark:text-blue-400 hover:underline ml-1"
-                                    >
-                                        点击创建 Token
-                                    </a>
-                                </p>
-
-                                <div className="space-y-3">
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 mb-1.5 block">GitHub Token</label>
-                                        <input
-                                            type="password"
-                                            className="w-full p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-slate-50 dark:bg-slate-800 font-mono"
-                                            placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                                            value={gistToken}
-                                            onChange={e => setGistToken(e.target.value)}
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 mb-1.5 block">
-                                            Gist ID（首次同步后自动生成，也可手动填入已有的 Gist ID）
-                                        </label>
-                                        <input
-                                            type="text"
-                                            className="w-full p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-slate-50 dark:bg-slate-800 font-mono"
-                                            placeholder="自动生成或手动输入"
-                                            value={gistId}
-                                            onChange={e => setGistId(e.target.value)}
-                                        />
-                                    </div>
-
-                                    <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
-                                        <div>
-                                            <div className="font-medium text-sm">自动云同步</div>
-                                            <div className="text-xs text-slate-500">用户操作后自动同步到云端</div>
-                                        </div>
-                                        <button
-                                            onClick={() => setGistAutoSync(!gistAutoSync)}
-                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${gistAutoSync ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
-                                        >
-                                            <span
-                                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${gistAutoSync ? 'translate-x-6' : 'translate-x-1'}`}
-                                            />
-                                        </button>
-                                    </div>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
-                                        <button
-                                            onClick={handleSyncToGist}
-                                            disabled={isGistSyncing || !gistToken}
-                                            className="py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
-                                        >
-                                            {isGistSyncing ? <Icon name="refresh" className="w-4 h-4 animate-spin" /> : <Icon name="upload" className="w-4 h-4" />}
-                                            {isGistSyncing ? '同步中...' : '上传用户数据'}
-                                        </button>
-
-                                        <button
-                                            onClick={handleLoadFromGist}
-                                            disabled={isGistSyncing || !gistToken || !gistId}
-                                            className="py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
-                                        >
-                                            {isGistSyncing ? <Icon name="refresh" className="w-4 h-4 animate-spin" /> : <Icon name="download" className="w-4 h-4" />}
-                                            合并用户数据
-                                        </button>
-
-                                        <button
-                                            onClick={handleReplaceFromGist}
-                                            disabled={isGistSyncing || !gistToken || !gistId}
-                                            className="py-3 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-400 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
-                                        >
-                                            {isGistSyncing ? <Icon name="refresh" className="w-4 h-4 animate-spin" /> : <Icon name="refresh" className="w-4 h-4" />}
-                                            替换用户数据
-                                        </button>
-                                    </div>
-
-                                    <div className="text-xs text-slate-500 space-y-1 pt-2">
-                                        <p>• 上传用户数据：将用户数据上传到 GitHub Gist（首次会创建新 Gist）</p>
-                                        <p>• 合并用户数据：从 Gist 下载数据并与本地数据智能合并</p>
-                                        <p>• 替换用户数据：用 Gist 中的数据完全替换本地用户数据</p>
-                                        <p>• 兼容旧格式：自动识别并转换旧版本的完整数据格式</p>
-                                    </div>
-                                </div>
-                            </SettingsSection>
-
-                            <SettingsSection
-                                title="Supabase 云同步"
-                                icon="refresh"
-                                iconColor="text-green-500"
-                                description="使用 Supabase 数据库在多设备间同步用户数据"
-                            >
-                                <div className="text-xs text-slate-500 mb-3 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg">
-                                    <strong>说明：</strong>只同步用户个性化数据（完成状态、备注、用户创建的日程等），不包含基础日程库。
-                                </div>
-                                <div className="text-xs text-slate-500 mb-3 p-3 bg-yellow-50 dark:bg-yellow-900/10 rounded-lg">
-                                    <strong>⚠️ 默认云同步限制：</strong>
-                                    <ul className="mt-1 space-y-0.5 list-disc list-inside">
-                                        <li>数据大小限制：100 KB（仅支持轻量体验）</li>
-                                        <li>同步频率限制：每 5 分钟可执行一次同步</li>
-                                        <li>数据安全性：公开数据库，无法保证数据安全</li>
-                                    </ul>
-                                    <div className="mt-2 font-semibold">💡 如需同步更多数据或稳定使用，请使用自定义 Supabase 服务器（个人使用免费，无限制）</div>
-                                </div>
-                                <div className="space-y-3">
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 mb-1.5 block">
-                                            同步 ID（用于区分不同用户的数据，请设置一个唯一的标识符）
-                                        </label>
-                                        <input
-                                            type="text"
-                                            className="w-full p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-slate-50 dark:bg-slate-800 font-mono"
-                                            placeholder="例如：user_12345 或任意唯一标识"
-                                            value={syncId}
-                                            onChange={e => setSyncId(e.target.value)}
-                                        />
-                                        <div className="text-xs text-slate-500 mt-1">
-                                            ⚠️ 同步 ID 相同的设备会共享数据，请妥善保管
-                                        </div>
-                                    </div>
-
-                                    {syncCooldown > 0 && (
-                                        <div className="p-3 bg-yellow-50 dark:bg-yellow-900/10 rounded-lg text-xs text-yellow-700 dark:text-yellow-400">
-                                            ⏱️ 同步冷却中，还需等待 {Math.floor(syncCooldown / 60)}分{syncCooldown % 60}秒
-                                        </div>
-                                    )}
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
-                                        <button
-                                            onClick={handleUploadToSupabase}
-                                            disabled={isSupabaseSyncing || !syncId || syncCooldown > 0}
-                                            className="py-3 bg-green-600 hover:bg-green-700 disabled:bg-slate-400 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
-                                        >
-                                            {isSupabaseSyncing ? <Icon name="refresh" className="w-4 h-4 animate-spin" /> : <Icon name="upload" className="w-4 h-4" />}
-                                            {isSupabaseSyncing ? '上传中...' : '上传到云端'}
-                                        </button>
-
-                                        <button
-                                            onClick={handleDownloadFromSupabase}
-                                            disabled={isSupabaseSyncing || !syncId || syncCooldown > 0}
-                                            className="py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
-                                        >
-                                            {isSupabaseSyncing ? <Icon name="refresh" className="w-4 h-4 animate-spin" /> : <Icon name="download" className="w-4 h-4" />}
-                                            {isSupabaseSyncing ? '下载中...' : '从云端下载'}
-                                        </button>
-                                    </div>
-
-                                    <div className="text-xs text-slate-500 space-y-1 pt-2">
-                                        <p>• 上传到云端：将用户数据上传到 Supabase 数据库</p>
-                                        <p>• 从云端下载：从 Supabase 下载数据并与本地数据智能合并</p>
-                                        <p>• {isUsingDefaultConfig() ? '默认云同步：100 KB 大小限制，每 5 分钟可同步一次' : '自定义服务器：无大小和频率限制'}</p>
-                                        <p>• 数据隔离：不同的同步 ID 之间数据完全隔离</p>
-                                    </div>
-
-                                    <div className="border-t dark:border-slate-700 pt-4 mt-4">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <div>
-                                                <div className="font-medium text-sm">使用自定义 Supabase 服务器</div>
-                                                <div className="text-xs text-slate-500">配置自己的 Supabase 项目，无大小和频率限制</div>
-                                            </div>
-                                            <button
-                                                onClick={() => setShowCustomConfig(!showCustomConfig)}
-                                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${showCustomConfig ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
-                                            >
-                                                <span
-                                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showCustomConfig ? 'translate-x-6' : 'translate-x-1'}`}
-                                                />
-                                            </button>
-                                        </div>
-
-                                        {showCustomConfig && (
-                                            <div className="space-y-3 mt-3">
-                                                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
-                                                    <div>
-                                                        <div className="font-medium text-sm">自动云同步</div>
-                                                        <div className="text-xs text-slate-500">用户操作后自动同步到云端</div>
-                                                    </div>
-                                                    <button
-                                                        onClick={() => setSupabaseAutoSync(!supabaseAutoSync)}
-                                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${supabaseAutoSync ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
-                                                    >
-                                                        <span
-                                                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${supabaseAutoSync ? 'translate-x-6' : 'translate-x-1'}`}
-                                                        />
-                                                    </button>
-                                                </div>
-
-                                                <div>
-                                                    <label className="text-xs font-bold text-slate-500 mb-1.5 block">Supabase URL</label>
-                                                    <input
-                                                        type="text"
-                                                        className="w-full p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-slate-50 dark:bg-slate-800 font-mono"
-                                                        placeholder="https://xxxxx.supabase.co"
-                                                        value={supabaseUrl}
-                                                        onChange={e => setSupabaseUrl(e.target.value)}
-                                                    />
-                                                </div>
-
-                                                <div>
-                                                    <label className="text-xs font-bold text-slate-500 mb-1.5 block">Supabase Anon Key</label>
-                                                    <input
-                                                        type="password"
-                                                        className="w-full p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-slate-50 dark:bg-slate-800 font-mono"
-                                                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                                                        value={supabaseKey}
-                                                        onChange={e => setSupabaseKey(e.target.value)}
-                                                    />
-                                                </div>
-
-                                                <div className="text-xs text-slate-500 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg">
-                                                    <strong>提示：</strong>需要自己创建 Supabase 项目并执行数据库初始化脚本。
-                                                    <a
-                                                        href="https://supabase.com/dashboard"
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="text-blue-600 dark:text-blue-400 hover:underline ml-1"
-                                                    >
-                                                        前往 Supabase 控制台
-                                                    </a>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </SettingsSection>
-
-                            <div className="hidden">
-                                <SettingsSection
-                                    title="ICS 日历订阅"
-                                    icon="refresh"
-                                    iconColor="text-emerald-500"
-                                    description="输入 ICS 订阅链接，同步日历数据"
-                                >
-
-                                    <p className="text-xs text-slate-500 mb-4 italic">同步时将自动提取 Tag 和 B 站链接。首次使用，请前往枝江站(asoul.love)获取订阅链接，<a
-                                        href="https://asoul.love/calendar/latest"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-blue-600 dark:text-blue-400 hover:underline ml-1"
-                                    >
-                                        点此前往</a></p>
-                                    <textarea
-                                        className="w-full h-24 p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-slate-50 dark:bg-slate-800 font-mono mb-2"
-                                        placeholder="https://example.com/calendar.ics" value={icsUrls} onChange={e => setIcsUrls(e.target.value)} />
-                                    <button onClick={handleSyncIcs} disabled={isSyncing} className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2">
-                                        {isSyncing ? <Icon name="refresh" className="w-4 h-4 animate-spin" /> : null}
-                                        {isSyncing ? '同步中...' : '保存并立即同步'}
-                                    </button>
-                                    <div className="mt-3">
-                                        <input
-                                            type="file"
-                                            accept=".ics"
-                                            onChange={handleImportICSFile}
-                                            className="hidden"
-                                            id="ics-file-input"
-                                        />
-                                        <label
-                                            htmlFor="ics-file-input"
-                                            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
-                                        >
-                                            <Icon name="upload" className="w-4 h-4" />
-                                            导入本地ICS文件
-                                        </label>
-                                    </div>
-                                </SettingsSection>
-                            </div>
-
-                            <div className="hidden">
-                                <SettingsSection
-                                    title="解析文本日程"
-                                    icon="plus"
-                                    iconColor="text-blue-500"
-                                    description="粘贴文本格式的日程数据进行批量导入"
-                                >
-                                    <textarea className="w-full h-48 p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-slate-50 dark:bg-slate-800 font-mono" placeholder="在此粘贴日程文本..." value={inputText} onChange={e => setInputText(e.target.value)} />
-                                    <button onClick={() => parseText(inputText)} disabled={!inputText.trim()} className="mt-4 w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold disabled:opacity-50 transition-all">导入并保存</button>
-                                </SettingsSection>
-                            </div>
-
-                            <SettingsSection
-                                title="关于"
-                                icon="calendar"
-                                iconColor="text-blue-500"
-                                description="应用信息和免责声明"
-                            >
-                                <div className="space-y-4">
-                                    <div className="text-sm">
-                                        <div className="font-medium text-slate-900 dark:text-slate-100">枝江追番表</div>
-                                        <div className="text-slate-500 dark:text-slate-400">一个受<a href="https://asoul.love/" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">枝江日程表</a>启发制作的一个方便补录播的工具。</div>
-                                        <div className="text-slate-500 dark:text-slate-400">整体画面风格均仿照枝江日程表设计。感谢未署名的枝江日程表开发者。</div>
-                                    </div>
-                                    <div className="text-sm">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <div className="font-medium text-slate-900 dark:text-slate-100">版本信息</div>
-                                                <div className="text-slate-500 dark:text-slate-400">v1.1.1</div>
-                                            </div>
-                                            <button
-                                                onClick={() => setView('changelog')}
-                                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-                                            >
-                                                <Icon name="file-text" className="w-4 h-4" />
-                                                查看更新日志
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div className="text-sm">
-                                        <div className="font-medium text-slate-900 dark:text-slate-100">主要功能</div>
-                                        <ul className="text-slate-500 dark:text-slate-400 list-disc list-inside space-y-1">
-                                            <li>日历视图显示直播日程</li>
-                                            <li>追番表管理进度</li>
-                                            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font size="1">支持设置任意跳转链接，使用B站网页端自带的精准空降链接即可实现跳转到上次观看位置</font>
-                                            <li>ICS 日历订阅同步（订阅自<a href="https://asoul.love/" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">枝江日程表</a>）</li>
-                                            <li>多成员颜色配置</li>
-                                            <li>数据导入导出</li>
-                                        </ul>
-                                    </div>
-                                    <div className="text-sm">
-                                        <div className="font-medium text-slate-900 dark:text-slate-100">免责声明</div>
-                                        <div className="text-slate-500 dark:text-slate-400">本站为粉丝自发搭建的非营利性第三方工具，<br />
-                                            与A-SOUL、枝江娱乐、乐华娱乐等官方无任何关联。<br /><br />
-                                            所有数据来源于 Bilibili 公开动态或用户自行填充，<br />
-                                            版权归原作者所有。如有侵权，请联系我们删除。<br /><br />
-                                            信息可能存在误差，请以官方发布为准。 本站不对因信息错误导致的任何损失承担责任。</div>
-                                    </div>
-                                    <div className="text-sm">
-                                        <div className="font-medium text-slate-900 dark:text-slate-100">技术支持</div>
-                                        <div className="text-slate-500 dark:text-slate-400">如有问题或建议，请联系开发者</div>
-                                    </div>
-                                </div>
-                            </SettingsSection>
-                        </div>
+                        <SettingsView
+                            view={view}
+                            setView={setView}
+                            schedules={schedules}
+                            setSchedules={setSchedules}
+                            displayMode={displayMode} setDisplayMode={setDisplayMode}
+                            useSpecialGroupColor={useSpecialGroupColor} setUseSpecialGroupColor={setUseSpecialGroupColor}
+                            showSearchBtn={showSearchBtn} setShowSearchBtn={setShowSearchBtn}
+                            showDynamicBtn={showDynamicBtn} setShowDynamicBtn={setShowDynamicBtn}
+                            customColors={customColors} setCustomColors={setCustomColors}
+                            isLoadingBase={isLoadingBase} handleUpdateBaseSchedules={handleUpdateBaseSchedules}
+                            gistToken={gistToken} setGistToken={setGistToken}
+                            gistId={gistId} setGistId={setGistId}
+                            gistAutoSync={gistAutoSync} setGistAutoSync={setGistAutoSync}
+                            isGistSyncing={isGistSyncing}
+                            handleSyncToGist={handleSyncToGist}
+                            handleLoadFromGist={handleLoadFromGist}
+                            handleReplaceFromGist={handleReplaceFromGist}
+                            syncId={syncId} setSyncId={setSyncId}
+                            syncCooldown={syncCooldown}
+                            isSupabaseSyncing={isSupabaseSyncing}
+                            supabaseAutoSync={supabaseAutoSync} setSupabaseAutoSync={setSupabaseAutoSync}
+                            showCustomConfig={showCustomConfig} setShowCustomConfig={setShowCustomConfig}
+                            supabaseUrl={supabaseUrl} setSupabaseUrl={setSupabaseUrl}
+                            supabaseKey={supabaseKey} setSupabaseKey={setSupabaseKey}
+                            handleUploadToSupabase={handleUploadToSupabase}
+                            handleDownloadFromSupabase={handleDownloadFromSupabase}
+                            handleImportJSON={handleImportJSON}
+                            handleImportICSFile={handleImportICSFile}
+                            handleSyncIcs={handleSyncIcs}
+                            isSyncing={isSyncing}
+                            icsUrls={icsUrls} setIcsUrls={setIcsUrls}
+                            inputText={inputText} setInputText={setInputText}
+                            parseText={parseText}
+                        />
                     )}
                 </main>
 
-                {editingNoteId && (
-                    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm border dark:border-slate-800 p-5">
-                            <div className="font-bold mb-4 flex justify-between items-center text-slate-900 dark:text-slate-100">
-                                <span className="flex items-center gap-2"><Icon name="message-square" className="w-4 h-4" /> 备注和链接</span>
-                                <button onClick={() => setEditingNoteId(null)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400"><Icon name="x" /></button>
-                            </div>
-                            <div className="space-y-3">
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 mb-1.5 block">备注内容</label>
-                                    <textarea autoFocus className="w-full h-24 p-3 border dark:border-slate-700 rounded-xl text-sm bg-slate-50 dark:bg-slate-800 outline-none text-slate-900 dark:text-slate-100" value={tempNote} onChange={e => setTempNote(e.target.value)} placeholder="输入观看进度或其他备注..." />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 mb-1.5 block">跳转链接</label>
-                                    <input type="url" className="w-full p-3 border dark:border-slate-700 rounded-xl text-sm bg-slate-50 dark:bg-slate-800 outline-none text-slate-900 dark:text-slate-100" value={tempLink} onChange={e => setTempLink(e.target.value)} placeholder="输入链接或包含链接的文本，保存时自动提取纯链接..." />
-                                </div>
-                            </div>
-                            <div className="flex gap-2 mt-4">
-                                <button onClick={() => setEditingNoteId(null)} className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 rounded-xl text-sm font-bold">取消</button>
-                                <button onClick={() => saveNote(editingNoteId)} className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold">保存</button>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                {/* 弹窗层 */}
+                <NoteModal
+                    editingNoteId={editingNoteId}
+                    tempNote={tempNote} setTempNote={setTempNote}
+                    tempLink={tempLink} setTempLink={setTempLink}
+                    onSave={saveNote}
+                    onClose={() => setEditingNoteId(null)}
+                />
 
-                {isAddModalOpen && (
-                    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md border dark:border-slate-800 p-6 space-y-4">
-                            <div className="font-bold flex justify-between items-center text-slate-900 dark:text-slate-100">
-                                <span className="flex items-center gap-2"><Icon name="plus" className="w-4 h-4 text-blue-500" /> 手动新增</span>
-                                <button onClick={() => setIsAddModalOpen(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"><Icon name="x" /></button>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div><label className="text-xs font-bold text-slate-500 mb-1.5 block">成员</label>
-                                    <select className="w-full p-2.5 border dark:border-slate-700 rounded-xl text-sm bg-slate-50 dark:bg-slate-800 outline-none text-slate-900 dark:text-slate-100" value={newSchedule.category} onChange={e => setNewSchedule({ ...newSchedule, category: e.target.value })}>
-                                        {Object.keys(DEFAULT_MEMBER_CONFIG).map(name => <option key={name} value={name}>{name}</option>)}
-                                    </select>
-                                </div>
-                                <div><label className="text-xs font-bold text-slate-500 mb-1.5 block">类型</label>
-                                    <input type="text" className="w-full p-2.5 border dark:border-slate-700 rounded-xl text-sm bg-slate-50 dark:bg-slate-800 outline-none text-slate-900 dark:text-slate-100" value={newSchedule.type} onChange={e => setNewSchedule({ ...newSchedule, type: e.target.value })} placeholder="直播" />
-                                </div>
-                            </div>
-                            <div className="flex items-center justify-between p-3 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-                                <div>
-                                    <div className="font-medium text-sm">标记为追番</div>
-                                    <div className="text-xs text-slate-500">此日程将显示在追番表中，不在日历中显示</div>
-                                </div>
-                                <button
-                                    onClick={() => setNewSchedule({ ...newSchedule, isAnime: !newSchedule.isAnime })}
-                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${newSchedule.isAnime ? 'bg-orange-600' : 'bg-slate-300 dark:bg-slate-700'}`}
-                                >
-                                    <span
-                                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${newSchedule.isAnime ? 'translate-x-6' : 'translate-x-1'}`}
-                                    />
-                                </button>
-                            </div>
-                            {newSchedule.isAnime && (
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 mb-1.5 block">跳转链接</label>
-                                    <input type="text" className="w-full p-2.5 border dark:border-slate-700 rounded-xl text-sm bg-slate-50 dark:bg-slate-800 outline-none text-slate-900 dark:text-slate-100" value={newSchedule.link} onChange={e => setNewSchedule({ ...newSchedule, link: e.target.value })} placeholder="https://example.com" />
-                                </div>
-                            )}
-                            {!newSchedule.isAnime && (
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div><label className="text-xs font-bold text-slate-500 mb-1.5 block">日期</label>
-                                        <input type="date" className="w-full p-2.5 border dark:border-slate-700 rounded-xl text-sm bg-slate-50 dark:bg-slate-800 outline-none text-slate-900 dark:text-slate-100" value={newSchedule.date.replace(/\//g, '-')} onChange={e => setNewSchedule({ ...newSchedule, date: e.target.value.replace(/-/g, '/') })} />
-                                    </div>
-                                    <div><label className="text-xs font-bold text-slate-500 mb-1.5 block">时间</label>
-                                        <input type="time" className="w-full p-2.5 border dark:border-slate-700 rounded-xl text-sm bg-slate-50 dark:bg-slate-800 outline-none text-slate-900 dark:text-slate-100" value={newSchedule.time} onChange={e => setNewSchedule({ ...newSchedule, time: e.target.value })} />
-                                    </div>
-                                </div>
-                            )}
-                            <div><label className="text-xs font-bold text-slate-500 mb-1.5 block">副标题</label>
-                                <input type="text" className="w-full p-2.5 border dark:border-slate-700 rounded-xl text-sm bg-slate-50 dark:bg-slate-800 outline-none text-slate-900 dark:text-slate-100" value={newSchedule.subTitle} onChange={e => setNewSchedule({ ...newSchedule, subTitle: e.target.value })} placeholder="直播" />
-                            </div>
-                            <div><label className="text-xs font-bold text-slate-500 mb-1.5 block">主标题</label>
-                                <input type="text" className="w-full p-2.5 border dark:border-slate-700 rounded-xl text-sm bg-slate-50 dark:bg-slate-800 outline-none text-slate-900 dark:text-slate-100" value={newSchedule.title} onChange={e => setNewSchedule({ ...newSchedule, title: e.target.value })} placeholder="《嘉然的奇妙冒险》" />
-                            </div>
-                            <div className="flex gap-3 pt-4">
-                                <button onClick={() => setIsAddModalOpen(false)} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-sm font-bold">取消</button>
-                                <button onClick={handleManualAdd} className="flex-1 py-3 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-lg">确认添加</button>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                <AddScheduleModal
+                    isOpen={isAddModalOpen}
+                    newSchedule={newSchedule}
+                    setNewSchedule={setNewSchedule}
+                    onAdd={handleManualAdd}
+                    onClose={() => setIsAddModalOpen(false)}
+                />
 
-                {/* 外部链接确认弹窗 */}
-                {externalLinkModal.isOpen && (
-                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setExternalLinkModal({ isOpen: false, url: '' })}>
-                        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full p-6 border dark:border-slate-800" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="w-10 h-10 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
-                                    <Icon name="external-link" className="w-5 h-5 text-yellow-600 dark:text-yellow-500" />
-                                </div>
-                                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">外部链接提醒</h3>
-                            </div>
+                <ExternalLinkModal
+                    modal={externalLinkModal}
+                    onClose={() => setExternalLinkModal({ isOpen: false, url: '' })}
+                />
 
-                            <div className="mb-4 space-y-3">
-                                <p className="text-sm text-slate-600 dark:text-slate-400">
-                                    您即将跳转到外部网站：
-                                </p>
-                                <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg break-all text-xs font-mono text-slate-700 dark:text-slate-300">
-                                    {externalLinkModal.url}
-                                </div>
-                                <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                                    <p className="text-xs text-yellow-800 dark:text-yellow-200 leading-relaxed">
-                                        <span className="font-bold">⚠️ 免责声明：</span>
-                                        该链接指向外部网站，不属于 bilibili.com 域名。请注意网络安全，谨慎访问未知网站。本应用不对外部链接的内容和安全性负责。
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setExternalLinkModal({ isOpen: false, url: '' })}
-                                    className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 transition-colors"
-                                >
-                                    取消
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        // 使用 a 标签方式打开，确保 URL 参数正确传递
-                                        const a = document.createElement('a');
-                                        a.href = externalLinkModal.url;
-                                        a.target = '_blank';
-                                        a.rel = 'noopener noreferrer';
-                                        document.body.appendChild(a);
-                                        a.click();
-                                        document.body.removeChild(a);
-                                        setExternalLinkModal({ isOpen: false, url: '' });
-                                    }}
-                                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg transition-colors"
-                                >
-                                    继续访问
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* URL 参数设置链接：候选日程选择弹窗 */}
-                {setLinkCandidateModal.isOpen && (
-                    <div
-                        className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[110] p-4"
-                        onClick={() => setSetLinkCandidateModal({ isOpen: false, candidates: [], pendingLink: '' })}
-                    >
-                        <div
-                            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full p-6 border dark:border-slate-800"
-                            onClick={e => e.stopPropagation()}
-                        >
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-                                    <Icon name="link" className="w-5 h-5 text-blue-500" />
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">找到多个匹配日程</h3>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">请选择要设置链接的目标日程</p>
-                                </div>
-                            </div>
-
-                            <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl mb-4">
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">待设置的链接：</p>
-                                <p className="text-xs font-mono text-slate-700 dark:text-slate-300 break-all leading-relaxed">
-                                    {setLinkCandidateModal.pendingLink}
-                                </p>
-                            </div>
-
-                            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                                {setLinkCandidateModal.candidates.map(s => {
-                                    const timeStr = s.id.split('-')[1] || '';
-                                    const displayTime = timeStr.length === 4
-                                        ? `${timeStr.slice(0, 2)}:${timeStr.slice(2)}`
-                                        : timeStr;
-                                    return (
-                                        <button
-                                            key={s.id}
-                                            onClick={() => {
-                                                applyScheduleLink(s, setLinkCandidateModal.pendingLink);
-                                                setSetLinkCandidateModal({ isOpen: false, candidates: [], pendingLink: '' });
-                                            }}
-                                            className="w-full text-left p-3 rounded-xl border border-slate-200 dark:border-slate-700
-                                                hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20
-                                                transition-colors group"
-                                        >
-                                            <div className="flex items-center justify-between gap-2">
-                                                <div className="min-w-0">
-                                                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">
-                                                        {s.title || s.subTitle || '（无标题）'}
-                                                    </p>
-                                                    {s.title && s.subTitle && (
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{s.subTitle}</p>
-                                                    )}
-                                                </div>
-                                                <span className="shrink-0 text-xs font-mono text-blue-500 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-lg">
-                                                    {displayTime}
-                                                </span>
-                                            </div>
-                                            <p className="text-[10px] text-slate-400 dark:text-slate-600 mt-1 font-mono truncate">{s.id}</p>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-
-                            <button
-                                onClick={() => setSetLinkCandidateModal({ isOpen: false, candidates: [], pendingLink: '' })}
-                                className="mt-4 w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700
-                                    rounded-xl text-sm font-bold text-slate-600 dark:text-slate-400 transition-colors"
-                            >
-                                取消
-                            </button>
-                        </div>
-                    </div>
-                )}
+                <SetLinkCandidateModal
+                    modal={setLinkCandidateModal}
+                    onSelect={(s, link) => { applyScheduleLink(s, link); setSetLinkCandidateModal({ isOpen: false, candidates: [], pendingLink: '' }); }}
+                    onClose={() => setSetLinkCandidateModal({ isOpen: false, candidates: [], pendingLink: '' })}
+                />
 
                 {/* 页脚 */}
                 <footer className="fixed bottom-0 left-0 right-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm border-t dark:border-slate-800 py-2 px-4 z-10">
                     <div className="max-w-6xl mx-auto flex justify-center items-center">
                         <span className="text-xs text-slate-600 dark:text-slate-400">
-                            <a href="https://github.com/Evelynall/ASoul-Calendar"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 dark:text-blue-400 hover:underline ml-1">
-                                项目Github
-                            </a>
+                            <a href="https://github.com/Evelynall/ASoul-Calendar" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline ml-1">项目Github</a>
                             &nbsp;&nbsp;
-                            <a href="https://greasyfork.org/zh-CN/scripts/577237-%E6%9E%9D%E6%B1%9F%E8%BF%BD%E7%95%AA%E8%A1%A8%E8%BF%9B%E5%BA%A6%E4%BF%9D%E5%AD%98%E8%84%9A%E6%9C%AC"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 dark:text-blue-400 hover:underline ml-1">
-                                进度保存脚本
-                            </a>
+                            <a href="https://greasyfork.org/zh-CN/scripts/577237-%E6%9E%9D%E6%B1%9F%E8%BF%BD%E7%95%AA%E8%A1%A8%E8%BF%9B%E5%BA%A6%E4%BF%9D%E5%AD%98%E8%84%9A%E6%9C%AC" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline ml-1">进度保存脚本</a>
                             &nbsp;&nbsp; 所有日程数据均来自枝江站(asoul.love)，感谢
-                            <a href="https://asoul.love/"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 dark:text-blue-400 hover:underline ml-1">
-                                枝江站
-                            </a>
+                            <a href="https://asoul.love/" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline ml-1">枝江站</a>
                             &nbsp;的分享与许可！&nbsp;
-                            <a
-                                onClick={(e) => {
-                                    e.preventDefault(); // 阻止<a>标签的默认跳转行为
-                                    markChangelogAsRead(); // 标记已读
-                                    setView('changelog'); // 执行你的逻辑
-                                }}
-                                className="text-blue-600 dark:text-blue-400 hover:underline ml-1"
-                                href="#" // 加空href保证浏览器识别为可点击元素（可选，但推荐）
-                            >
-                                查看更新日志
-                            </a>
+                            <a onClick={(e) => { e.preventDefault(); markChangelogAsRead(); setView('changelog'); }} className="text-blue-600 dark:text-blue-400 hover:underline ml-1" href="#">查看更新日志</a>
                         </span>
                     </div>
                 </footer>
@@ -2878,6 +635,6 @@ function App() {
             </div>
         </>
     );
-};
+}
 
 export default App;

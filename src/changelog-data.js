@@ -1,6 +1,16 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.6.0',
+        date: '2026-05-18',
+        type: 'patch',
+        changes: [
+            { type: 'improvement', text: '完全拆分了应用入口的代码，将2800行的代码拆成了十数个文件' },
+            { type: 'improvement', text: '删除了部分无用的代码' },
+            { type: 'improvement', text: '虽然和用户体验没有直接关系，但是我很开心，所以我决定给它一个新的版本号XD' },
+            { type: 'improvement', text: '此次改动较为底层且变动较大，也许会有未测试到的问题出现，若有遇到请前往github提个issue，万分感谢' }
+        ]
+    }, {
         version: '1.5.2',
         date: '2026-05-14',
         type: 'patch',

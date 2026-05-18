@@ -5,7 +5,6 @@ import { getMemberConfig, toZeroDate } from '../utils';
 const ScheduleCard = ({
     item,
     showDate = false,
-    showMoveButton = false,
     toggleComplete,
     toggleFavorite,
     handleBilibiliSearch,
@@ -21,11 +20,6 @@ const ScheduleCard = ({
     // 获取直播间URL（优先级：ICS直播间URL > 预定义直播间URL）
     const liveRoomUrl = item.liveRoomUrl || LIVE_ROOM_URLS[item.category];
     const config = getMemberConfig(item.category, displayMode, liveRoomUrl);
-
-    // 外部链接跳转：直接用 window.open，和 test.html 完全一致
-    const openExternalUrl = (url) => {
-        window.open(url, '_blank');
-    };
 
     // 生成渐变背景样式
     const getBackgroundStyle = () => {

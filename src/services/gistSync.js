@@ -1,36 +1,4 @@
-import { USER_DATA_KEY, BASE_SCHEDULES_KEY } from '../constants';
-
-// 提取用户数据
-export const extractUserData = (schedules) => {
-    const userData = {};
-
-    schedules.forEach(schedule => {
-        if (schedule.isUserCreated) {
-            userData[schedule.id] = { ...schedule, isUserCreated: true };
-        } else if (schedule.isBaseSchedule) {
-            const userModifications = {};
-            if (schedule.completed) userModifications.completed = true;
-            if (schedule.note) userModifications.note = schedule.note;
-
-            if (schedule.link && schedule.link.trim()) {
-                const isSystemLink = schedule.link === schedule.liveRoomUrl ||
-                    schedule.link === schedule.dynamicUrl ||
-                    schedule.link === schedule.icsUrl;
-                if (!isSystemLink) {
-                    userModifications.link = schedule.link;
-                }
-            }
-            if (schedule.isFavorite) userModifications.isFavorite = true;
-            if (schedule.isAnime) userModifications.isAnime = true;
-
-            if (Object.keys(userModifications).length > 0) {
-                userData[schedule.id] = userModifications;
-            }
-        }
-    });
-
-    return userData;
-};
+import { USER_DATA_KEY } from '../constants';
 
 // 上传到 Gist
 export const uploadToGist = async (gistToken, gistId, userData) => {
@@ -164,32 +132,4 @@ export const mergeUserData = (currentUserData, importedUserData) => {
     });
 
     return { mergedData: currentUserData, addedCount, updatedCount };
-};
-
-// 重新加载日程
-export const reloadSchedules = (userData) => {
-    const baseSchedules = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
-
-    const mergedSchedules = baseSchedules.map(baseItem => {
-        const userItem = userData[baseItem.id];
-        return {
-            ...baseItem,
-            completed: userItem?.completed || baseItem.completed || false,
-            note: userItem?.note || baseItem.note || '',
-            link: userItem?.link || baseItem.link || '',
-            isFavorite: userItem?.isFavorite || false,
-            isAnime: userItem?.isAnime || baseItem.isAnime || false,
-            isBaseSchedule: true
-        };
-    });
-
-    const userSchedules = Object.values(userData)
-        .filter(item => item.isUserCreated)
-        .map(item => ({
-            ...item,
-            isAnime: item.isAnime || false,
-            isFavorite: item.isFavorite || false
-        }));
-
-    return [...mergedSchedules, ...userSchedules];
 };
