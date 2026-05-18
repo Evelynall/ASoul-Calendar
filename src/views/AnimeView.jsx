@@ -17,7 +17,8 @@ export default function AnimeView({
     setSchedules,
     setExternalLinkModal,
     showSearchBtn,
-    showDynamicBtn
+    showDynamicBtn,
+    mobileOptimize
 }) {
     const animeSchedules = schedules
         .filter(item => item.isAnime || item.isFavorite)
@@ -60,6 +61,7 @@ export default function AnimeView({
                             setExternalLinkModal={setExternalLinkModal}
                             showSearchBtn={showSearchBtn}
                             showDynamicBtn={showDynamicBtn}
+                            mobileOptimize={mobileOptimize}
                         />
                     ))}
 

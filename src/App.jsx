@@ -27,9 +27,10 @@ import {
     DISPLAY_MODE_KEY,
     SPECIAL_GROUP_COLOR_KEY,
     SHOW_SEARCH_BTN_KEY,
-    SHOW_DYNAMIC_BTN_KEY
+    SHOW_DYNAMIC_BTN_KEY,
+    MOBILE_OPTIMIZE_KEY
 } from './constants';
-import { formatDateString, toZeroDate, extractUrlFromText } from './utils';
+import { formatDateString, toZeroDate, extractUrlFromText, isTouchDevice, toBilibiliScheme } from './utils';
 import { getInitialLinks } from './data/defaultLinks';
 
 // Hooks
@@ -97,6 +98,7 @@ function App() {
     });
     const [showSearchBtn, setShowSearchBtn] = useState(() => localStorage.getItem(SHOW_SEARCH_BTN_KEY) !== 'false');
     const [showDynamicBtn, setShowDynamicBtn] = useState(() => localStorage.getItem(SHOW_DYNAMIC_BTN_KEY) !== 'false');
+    const [mobileOptimize, setMobileOptimize] = useState(() => localStorage.getItem(MOBILE_OPTIMIZE_KEY) !== 'false');
 
     // ── 链接 ────────────────────────────────────────────────────────────────
     const [links, setLinks] = useState(() => getInitialLinks());
@@ -221,7 +223,12 @@ function App() {
     const handleBilibiliSearch = (item) => {
         const parts = item.date.split('/');
         const keyword = encodeURIComponent(`${item.category} ${parts[0]}.${parseInt(parts[1], 10)}.${parseInt(parts[2], 10)}`);
-        window.open(`https://search.bilibili.com/all?keyword=${keyword}`, '_blank');
+        const url = `https://search.bilibili.com/all?keyword=${keyword}`;
+        if (mobileOptimize && isTouchDevice()) {
+            window.location.href = toBilibiliScheme(url);
+        } else {
+            window.open(url, '_blank');
+        }
     };
 
     const handleManualAdd = () => {
@@ -465,7 +472,7 @@ function App() {
         toggleComplete, toggleFavorite, handleBilibiliSearch,
         setEditingNoteId, setTempNote, setTempLink,
         setSchedules, setExternalLinkModal,
-        showSearchBtn, showDynamicBtn
+        showSearchBtn, showDynamicBtn, mobileOptimize
     };
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -537,7 +544,7 @@ function App() {
                     )}
 
                     {view === 'links' && (
-                        <LinksView links={links} setLinks={setLinks} />
+                        <LinksView links={links} setLinks={setLinks} mobileOptimize={mobileOptimize} />
                     )}
 
                     {view === 'search' && (
@@ -558,6 +565,7 @@ function App() {
                             useSpecialGroupColor={useSpecialGroupColor} setUseSpecialGroupColor={setUseSpecialGroupColor}
                             showSearchBtn={showSearchBtn} setShowSearchBtn={setShowSearchBtn}
                             showDynamicBtn={showDynamicBtn} setShowDynamicBtn={setShowDynamicBtn}
+                            mobileOptimize={mobileOptimize} setMobileOptimize={setMobileOptimize}
                             customColors={customColors} setCustomColors={setCustomColors}
                             isLoadingBase={isLoadingBase} handleUpdateBaseSchedules={handleUpdateBaseSchedules}
                             gistToken={gistToken} setGistToken={setGistToken}

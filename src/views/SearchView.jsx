@@ -15,7 +15,8 @@ export default function SearchView({
     setSchedules,
     setExternalLinkModal,
     showSearchBtn,
-    showDynamicBtn
+    showDynamicBtn,
+    mobileOptimize
 }) {
     return (
         <div className="h-full max-w-3xl mx-auto p-4 md:p-8 flex flex-col overflow-hidden text-slate-900 dark:text-slate-100">
@@ -40,6 +41,7 @@ export default function SearchView({
                             setExternalLinkModal={setExternalLinkModal}
                             showSearchBtn={showSearchBtn}
                             showDynamicBtn={showDynamicBtn}
+                            mobileOptimize={mobileOptimize}
                         />
                     ))}
                 </div>
