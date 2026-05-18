@@ -17,6 +17,7 @@ export const SHOW_SEARCH_BTN_KEY = 'asoul_show_search_btn';
 export const SHOW_DYNAMIC_BTN_KEY = 'asoul_show_dynamic_btn';
 export const GIST_AUTO_SYNC_KEY = 'asoul_gist_auto_sync';
 export const SUPABASE_AUTO_SYNC_KEY = 'asoul_supabase_auto_sync';
+export const MOBILE_OPTIMIZE_KEY = 'asoul_mobile_optimize';
 
 // 基础日程库的 GitHub 地址 - 优先使用 gh-proxy 代理（实时数据，无CDN缓存延迟）
 export const BASE_SCHEDULES_URL = 'https://gh-proxy.org/https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json';

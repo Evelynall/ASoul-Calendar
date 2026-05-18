@@ -14,7 +14,8 @@ import {
     DISPLAY_MODE_KEY,
     SPECIAL_GROUP_COLOR_KEY,
     SHOW_SEARCH_BTN_KEY,
-    SHOW_DYNAMIC_BTN_KEY
+    SHOW_DYNAMIC_BTN_KEY,
+    MOBILE_OPTIMIZE_KEY
 } from '../constants';
 
 /**
@@ -34,6 +35,8 @@ export default function SettingsView({
     setShowSearchBtn,
     showDynamicBtn,
     setShowDynamicBtn,
+    mobileOptimize,
+    setMobileOptimize,
     customColors,
     setCustomColors,
     // 基础日程库
@@ -195,6 +198,16 @@ export default function SettingsView({
                             <div className="text-xs text-slate-500">{showDynamicBtn ? '显示B站动态跳转按钮' : '已隐藏'}</div>
                         </div>
                         <Toggle value={showDynamicBtn} onChange={v => { setShowDynamicBtn(v); localStorage.setItem(SHOW_DYNAMIC_BTN_KEY, v.toString()); }} />
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                        <div>
+                            <div className="font-medium">手机端优化</div>
+                            <div className="text-xs text-slate-500">
+                                {mobileOptimize ? '触屏设备上直接显示日程按钮，B站链接使用App跳转' : '已关闭'}
+                            </div>
+                        </div>
+                        <Toggle value={mobileOptimize} onChange={v => { setMobileOptimize(v); localStorage.setItem(MOBILE_OPTIMIZE_KEY, v.toString()); }} />
                     </div>
 
                     <div className="p-4 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-800">

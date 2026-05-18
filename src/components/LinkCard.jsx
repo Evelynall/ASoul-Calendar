@@ -1,9 +1,17 @@
 import Icon from './Icon';
+import { isTouchDevice, toBilibiliScheme, isBilibiliUrl } from '../utils';
 
-const LinkCard = ({ link, onEdit, onDelete }) => {
+const LinkCard = ({ link, onEdit, onDelete, mobileOptimize = true }) => {
+    // 是否启用手机端优化（需要开关开启 + 触屏设备）
+    const isMobileMode = mobileOptimize && isTouchDevice();
+
     const handleClick = () => {
         if (link.url) {
-            window.open(link.url, '_blank');
+            if (isMobileMode && isBilibiliUrl(link.url)) {
+                window.location.href = toBilibiliScheme(link.url);
+            } else {
+                window.open(link.url, '_blank');
+            }
         }
     };
 
@@ -28,7 +36,7 @@ const LinkCard = ({ link, onEdit, onDelete }) => {
                     </div>
                 </div>
 
-                <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className={`absolute top-2 right-2 flex items-center gap-0.5 ${isMobileMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
                     {/* 2. 编辑按钮尺寸调小 */}
                     <button
                         title="编辑"

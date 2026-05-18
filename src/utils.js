@@ -177,6 +177,44 @@ export const toZeroDate = (val) => {
     return d;
 };
 
+// 检测是否为触屏设备（无法悬停）
+export const isTouchDevice = () => {
+    return window.matchMedia('(hover: none)').matches || window.matchMedia('(pointer: coarse)').matches;
+};
+
+// 将 Bilibili HTTPS URL 转换为自定义 URL Scheme（用于直接打开 Bilibili App）
+export const toBilibiliScheme = (url) => {
+    if (!url || typeof url !== 'string') return url;
+
+    // 直播间: https://live.bilibili.com/22632424 → bilibili://live/22632424
+    let match = url.match(/^https?:\/\/live\.bilibili\.com\/(\d+)/);
+    if (match) return `bilibili://live/${match[1]}`;
+
+    // 搜索: https://search.bilibili.com/all?keyword=XXX → bilibili://search?keyword=XXX
+    match = url.match(/^https?:\/\/search\.bilibili\.com\/all\?(.+)/);
+    if (match) return `bilibili://search?${match[1]}`;
+
+    // 视频: https://www.bilibili.com/video/BVxxx → bilibili://video/BVxxx
+    match = url.match(/^https?:\/\/www\.bilibili\.com\/video\/(BV[\w]+)/);
+    if (match) return `bilibili://video/${match[1]}`;
+
+    // 用户空间: https://space.bilibili.com/672353429/... → bilibili://space/672353429/...
+    match = url.match(/^https?:\/\/space\.bilibili\.com\/(\d+)\/?(.*)/);
+    if (match) return match[2] ? `bilibili://space/${match[1]}/${match[2]}` : `bilibili://space/${match[1]}`;
+
+    // 话题: https://www.bilibili.com/v/topic/detail?topic_id=XXX → bilibili://topic/detail?topic_id=XXX
+    match = url.match(/^https?:\/\/www\.bilibili\.com\/v\/topic\/(.+)/);
+    if (match) return `bilibili://topic/${match[1]}`;
+
+    return url;
+};
+
+// 判断 URL 是否为 bilibili 域名
+export const isBilibiliUrl = (url) => {
+    if (!url || typeof url !== 'string') return false;
+    return /https?:\/\/(live\.bilibili\.com|search\.bilibili\.com|www\.bilibili\.com|space\.bilibili\.com)/.test(url);
+};
+
 // 从文本中提取URL链接
 export const extractUrlFromText = (text) => {
     if (!text) return '';

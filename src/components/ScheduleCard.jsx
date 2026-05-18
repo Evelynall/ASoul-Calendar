@@ -1,6 +1,6 @@
 import Icon from './Icon';
 import { DISPLAY_MODE_KEY, LIVE_ROOM_URLS } from '../constants';
-import { getMemberConfig, toZeroDate } from '../utils';
+import { getMemberConfig, toZeroDate, isTouchDevice, toBilibiliScheme, isBilibiliUrl } from '../utils';
 
 const ScheduleCard = ({
     item,
@@ -14,12 +14,32 @@ const ScheduleCard = ({
     setSchedules,
     setExternalLinkModal,
     showSearchBtn = true,
-    showDynamicBtn = true
+    showDynamicBtn = true,
+    mobileOptimize = true
 }) => {
     const displayMode = localStorage.getItem(DISPLAY_MODE_KEY) || 'multi-color';
+    // 是否启用手机端优化（需要开关开启 + 触屏设备）
+    const isMobileMode = mobileOptimize && isTouchDevice();
+
     // 获取直播间URL（优先级：ICS直播间URL > 预定义直播间URL）
     const liveRoomUrl = item.liveRoomUrl || LIVE_ROOM_URLS[item.category];
     const config = getMemberConfig(item.category, displayMode, liveRoomUrl);
+
+    // 根据手机端优化模式转换URL
+    const getMobileUrl = (url) => {
+        if (!url || !isMobileMode || !isBilibiliUrl(url)) return url;
+        return toBilibiliScheme(url);
+    };
+
+    // 打开链接（手机端URL Scheme用 location.href，桌面端用 window.open）
+    const openUrl = (url) => {
+        const targetUrl = getMobileUrl(url);
+        if (targetUrl.startsWith('bilibili://')) {
+            window.location.href = targetUrl;
+        } else {
+            window.open(targetUrl, '_blank');
+        }
+    };
 
     // 生成渐变背景样式
     const getBackgroundStyle = () => {
@@ -70,7 +90,7 @@ const ScheduleCard = ({
                 <div className="absolute top-1 right-1 flex items-center gap-0.5">
                     {item.completed &&
                         <Icon name="check-circle-2" className="w-3.5 h-3.5 text-green-400" />}
-                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className={`flex gap-0.5 ${isMobileMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
                         {!item.isAnime && (() => {
                             // 用户自定义了 link 时不显示直播/录播按钮
                             if (item.link && item.link.trim()) return null;
@@ -81,30 +101,34 @@ const ScheduleCard = ({
 
                             if (hasOfficialRecord) {
                                 // 有官方录播时显示录播按钮
-                                return <a href={item.officialRecordUrl} target="_blank" rel="noopener noreferrer" title="观看官方录播"
+                                const href = getMobileUrl(item.officialRecordUrl);
+                                return <a href={href} target={href.startsWith('bilibili://') ? undefined : '_blank'} rel="noopener noreferrer" title="观看官方录播"
                                     className="p-1 bg-black/5 hover:bg-black/10 rounded-full"
-                                    onClick={(e) => e.stopPropagation()}>
+                                    onClick={(e) => { e.stopPropagation(); if (href.startsWith('bilibili://')) e.preventDefault(), window.location.href = href; }}>
                                     <Icon name="record-play" className="w-3 h-3" />
                                 </a>;
                             } else if (liveRoomUrl) {
                                 // 无官方录播时显示直播间按钮
                                 return <button title="进入直播间" className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
-                                    e.stopPropagation(); window.open(liveRoomUrl, '_blank');
+                                    e.stopPropagation(); openUrl(liveRoomUrl);
                                 }}>
                                     <Icon name="bilibili" className="w-3 h-3" />
                                 </button>;
                             }
                             return null;
                         })()}
-                        {item.link && <a href={item.link} target="_blank" rel="noopener noreferrer" title="跳转链接"
-                            className="p-1 bg-black/5 hover:bg-black/10 rounded-full"
-                            onClick={(e) => e.stopPropagation()}>
-                            <Icon name="external-link" className="w-3 h-3" />
-                        </a>}
+                        {item.link && (() => {
+                            const href = getMobileUrl(item.link);
+                            return <a href={href} target={href.startsWith('bilibili://') ? undefined : '_blank'} rel="noopener noreferrer" title="跳转链接"
+                                className="p-1 bg-black/5 hover:bg-black/10 rounded-full"
+                                onClick={(e) => { e.stopPropagation(); if (href.startsWith('bilibili://')) e.preventDefault(), window.location.href = href; }}>
+                                <Icon name="external-link" className="w-3 h-3" />
+                            </a>;
+                        })()}
                         {showDynamicBtn && !item.isAnime && item.dynamicUrl && <button title="查看动态"
                             className="p-1 bg-black/5 hover:bg-black/10 rounded-full" onClick={(e) => {
                                 e.stopPropagation();
-                                window.open(item.dynamicUrl, '_blank');
+                                openUrl(item.dynamicUrl);
                             }}>
                             <Icon name="link" className="w-3 h-3" />
                         </button>}

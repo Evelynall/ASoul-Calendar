@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Icon from './Icon';
 import LinkCard from './LinkCard';
 
-const LinksView = ({ links, setLinks }) => {
+const LinksView = ({ links, setLinks, mobileOptimize = true }) => {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingLink, setEditingLink] = useState(null);
     const [formData, setFormData] = useState({
@@ -108,6 +108,7 @@ const LinksView = ({ links, setLinks }) => {
                                     link={link}
                                     onEdit={handleOpenModal}
                                     onDelete={handleDelete}
+                                    mobileOptimize={mobileOptimize}
                                 />
                             ))}
                         </div>

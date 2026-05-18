@@ -3,6 +3,15 @@ export const changelogData = [
     {
         version: '1.6.0',
         date: '2026-05-18',
+        type: 'minor',
+        changes: [
+            { type: 'improvement', text: '优化了手机端的使用体验，现在手机端打开页面时原本需要悬停显示的按钮会直接显示了' },
+            { type: 'improvement', text: '手机端打开页面后，跳转链接会自动调整为b站app的自定义URL，将会跳转至app而不会再打开一个网页了' },
+            { type: 'improvement', text: '此次更新的功能可以在 设置->外观选项 中手动关闭' }
+        ]
+    }, {
+        version: '1.5.3',
+        date: '2026-05-18',
         type: 'patch',
         changes: [
             { type: 'improvement', text: '完全拆分了应用入口的代码，将2800行的代码拆成了十数个文件' },

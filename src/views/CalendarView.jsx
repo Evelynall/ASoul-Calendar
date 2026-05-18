@@ -37,7 +37,8 @@ export default function CalendarView({
     setSchedules,
     setExternalLinkModal,
     showSearchBtn,
-    showDynamicBtn
+    showDynamicBtn,
+    mobileOptimize
 }) {
     const jumpToDate = (dateStr) => {
         setCurrentDate(toZeroDate(dateStr));
@@ -238,6 +239,7 @@ export default function CalendarView({
                                             setExternalLinkModal={setExternalLinkModal}
                                             showSearchBtn={showSearchBtn}
                                             showDynamicBtn={showDynamicBtn}
+                                            mobileOptimize={mobileOptimize}
                                         />
                                     )) : (
                                         <div className="h-24 flex items-center justify-center italic text-[10px] text-slate-300 dark:text-slate-800 border-2 border-dashed border-slate-50 dark:border-slate-900 rounded-xl">
