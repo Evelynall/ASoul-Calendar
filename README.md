@@ -25,7 +25,7 @@
 
 ## 一键保存
 
-新增了链接参数，可通过https://www.evelynal.top/ASoul-Calendar/?set_link=[日程id]&link=[链接]的格式为日程添加跳转链接
+新增了链接参数，可通过https://www.evelynal.top/ASoul-Calendar/?set_link=[日程id]&link=[链接] 的格式为日程添加跳转链接
 搭配对应的篡改猴脚本[枝江追番表进度保存脚本](https://greasyfork.org/zh-CN/scripts/577237-%E6%9E%9D%E6%B1%9F%E8%BF%BD%E7%95%AA%E8%A1%A8%E8%BF%9B%E5%BA%A6%E4%BF%9D%E5%AD%98%E8%84%9A%E6%9C%AC)，在录播视频标题将会显示一个按钮，用于快捷保存观看进度至对应日程
 
 ## 快捷链接
