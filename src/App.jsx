@@ -28,7 +28,8 @@ import {
     SPECIAL_GROUP_COLOR_KEY,
     SHOW_SEARCH_BTN_KEY,
     SHOW_DYNAMIC_BTN_KEY,
-    MOBILE_OPTIMIZE_KEY
+    MOBILE_OPTIMIZE_KEY,
+    SEARCH_PAGE_SIZE_KEY
 } from './constants';
 import { formatDateString, toZeroDate, extractUrlFromText, isTouchDevice, toBilibiliScheme } from './utils';
 import { getInitialLinks } from './data/defaultLinks';
@@ -99,6 +100,11 @@ function App() {
     const [showSearchBtn, setShowSearchBtn] = useState(() => localStorage.getItem(SHOW_SEARCH_BTN_KEY) !== 'false');
     const [showDynamicBtn, setShowDynamicBtn] = useState(() => localStorage.getItem(SHOW_DYNAMIC_BTN_KEY) !== 'false');
     const [mobileOptimize, setMobileOptimize] = useState(() => localStorage.getItem(MOBILE_OPTIMIZE_KEY) !== 'false');
+    const [searchPageSize, setSearchPageSize] = useState(() => {
+        const saved = localStorage.getItem(SEARCH_PAGE_SIZE_KEY);
+        return saved ? parseInt(saved, 10) : 10;
+    });
+    const [searchCurrentPage, setSearchCurrentPage] = useState(1);
 
     // ── 链接 ────────────────────────────────────────────────────────────────
     const [links, setLinks] = useState(() => getInitialLinks());
@@ -174,6 +180,8 @@ function App() {
     useEffect(() => { if (showCustomConfig && supabaseUrl && supabaseKey) { saveSupabaseConfig(supabaseUrl, supabaseKey); } else if (!showCustomConfig) { saveSupabaseConfig('', ''); } }, [supabaseUrl, supabaseKey, showCustomConfig]);
     useEffect(() => { if (syncId) saveSyncId(syncId); }, [syncId]);
     useEffect(() => { localStorage.setItem(ANIME_VIEW_KEY, view); }, [view]);
+    useEffect(() => { localStorage.setItem(SEARCH_PAGE_SIZE_KEY, searchPageSize.toString()); }, [searchPageSize]);
+    useEffect(() => { setSearchCurrentPage(1); }, [searchQuery]);
 
     // 同步冷却倒计时
     useEffect(() => {
@@ -548,7 +556,14 @@ function App() {
                     )}
 
                     {view === 'search' && (
-                        <SearchView filteredSchedules={filteredSchedules} {...scheduleCardProps} />
+                        <SearchView
+                            filteredSchedules={filteredSchedules}
+                            searchPageSize={searchPageSize}
+                            setSearchPageSize={setSearchPageSize}
+                            searchCurrentPage={searchCurrentPage}
+                            setSearchCurrentPage={setSearchCurrentPage}
+                            {...scheduleCardProps}
+                        />
                     )}
 
                     {view === 'changelog' && (

@@ -33,6 +33,10 @@ const Icon = ({ name, className = "w-4 h-4" }) => {
             <path d="m15 18-6-6 6-6" />,
         "chevron-right":
             <path d="m9 18 6-6-6-6" />,
+        "chevrons-left":
+            <path d="m11 17 5-5-5-5M18 17l5-5-5-5" />,
+        "chevrons-right":
+            <path d="m13 17 5-5-5-5M6 17l5-5-5-5" />,
         "check-circle-2": (
             <Fragment>
                 <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />

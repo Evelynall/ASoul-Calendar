@@ -1,6 +1,13 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.6.1',
+        date: '2026-05-19',
+        type: 'minor',
+        changes: [
+            { type: 'feature', text: '搜索页添加了分页功能，可以避免搜索时出现的卡顿' }
+        ]
+    }, {
         version: '1.6.0',
         date: '2026-05-18',
         type: 'minor',
