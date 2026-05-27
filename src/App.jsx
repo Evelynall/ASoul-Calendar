@@ -48,6 +48,7 @@ import SettingsView from './views/SettingsView';
 
 // Components
 import AppHeader from './AppHeader';
+import Pet from './pet/Pet';
 import NoteModal from './components/modals/NoteModal';
 import AddScheduleModal from './components/modals/AddScheduleModal';
 import ExternalLinkModal from './components/modals/ExternalLinkModal';
@@ -100,6 +101,7 @@ function App() {
     const [showSearchBtn, setShowSearchBtn] = useState(() => localStorage.getItem(SHOW_SEARCH_BTN_KEY) !== 'false');
     const [showDynamicBtn, setShowDynamicBtn] = useState(() => localStorage.getItem(SHOW_DYNAMIC_BTN_KEY) !== 'false');
     const [mobileOptimize, setMobileOptimize] = useState(() => localStorage.getItem(MOBILE_OPTIMIZE_KEY) !== 'false');
+    const [petEnabled, setPetEnabled] = useState(() => localStorage.getItem('pet_enabled') !== 'false');
     const [searchPageSize, setSearchPageSize] = useState(() => {
         const saved = localStorage.getItem(SEARCH_PAGE_SIZE_KEY);
         return saved ? parseInt(saved, 10) : 10;
@@ -488,6 +490,7 @@ function App() {
         <>
             <FirstTimeNotice />
             <NetworkStatus />
+            <Pet isEnabled={petEnabled} onToggleEnabled={setPetEnabled} />
 
             {/* 基础日程库拉取失败提示 */}
             {fetchError && (
@@ -606,6 +609,7 @@ function App() {
                             icsUrls={icsUrls} setIcsUrls={setIcsUrls}
                             inputText={inputText} setInputText={setInputText}
                             parseText={parseText}
+                            petEnabled={petEnabled} setPetEnabled={setPetEnabled}
                         />
                     )}
                 </main>

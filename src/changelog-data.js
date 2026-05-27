@@ -1,6 +1,13 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.7.0',
+        date: '2026-05-27',
+        type: 'minor',
+        changes: [
+            { type: 'feature', text: '添加了网页版的<a href="https://www.bilibili.com/video/BV1htc6zJEzb/" target="_blank" rel="noopener noreferrer">枝江小馒头</a>！目前功能还较少，会逐步更新！' }
+        ]
+    }, {
         version: '1.6.1',
         date: '2026-05-19',
         type: 'minor',

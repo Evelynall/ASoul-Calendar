@@ -77,7 +77,9 @@ export default function SettingsView({
     setIcsUrls,
     inputText,
     setInputText,
-    parseText
+    parseText,
+    petEnabled,
+    setPetEnabled
 }) {
     const fileInputRef = useRef(null);
 
@@ -208,6 +210,16 @@ export default function SettingsView({
                             </div>
                         </div>
                         <Toggle value={mobileOptimize} onChange={v => { setMobileOptimize(v); localStorage.setItem(MOBILE_OPTIMIZE_KEY, v.toString()); }} />
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                        <div>
+                            <div className="font-medium">显示桌宠</div>
+                            <div className="text-xs text-slate-500">
+                                {petEnabled ? '显示可爱的桌宠，右键可打开菜单' : '已隐藏'}
+                            </div>
+                        </div>
+                        <Toggle value={petEnabled} onChange={v => { setPetEnabled(v); localStorage.setItem('pet_enabled', v.toString()); }} />
                     </div>
 
                     <div className="p-4 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
@@ -537,7 +549,7 @@ export default function SettingsView({
                         <div className="flex items-center justify-between">
                             <div>
                                 <div className="font-medium text-slate-900 dark:text-slate-100">版本信息</div>
-                                <div className="text-slate-500 dark:text-slate-400">v1.6.0</div>
+                                <div className="text-slate-500 dark:text-slate-400">v1.7.0</div>
                             </div>
                             <button onClick={() => setView('changelog')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
                                 <Icon name="file-text" className="w-4 h-4" />

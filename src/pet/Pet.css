@@ -1,0 +1,176 @@
+.pet-container {
+  position: fixed;
+  z-index: 1000;
+}
+
+.pet-toggle {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff6b9d, #c44569);
+  color: white;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(255, 107, 157, 0.4);
+  transition: all 0.3s ease;
+  pointer-events: auto;
+  z-index: 1001;
+}
+
+.pet-toggle:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(255, 107, 157, 0.6);
+}
+
+.pet {
+  position: fixed;
+  width: 200px;
+  height: 200px;
+  pointer-events: auto;
+  z-index: 1000;
+  transition: transform 0.1s ease;
+}
+
+.pet.dragging {
+  z-index: 1002;
+  transform: scale(1.05);
+}
+
+.pet-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.pet-layer img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.pet-bg {
+  z-index: 1;
+}
+
+.pet-keyboard {
+  z-index: 2;
+  transition: transform 0.05s ease;
+  width: 30px;
+  height: 30px;
+  top: 66%;
+  left: 50%;
+  margin-left: -25px;
+  margin-top: -25px;
+}
+
+.pet-keyboard.pressed {
+  transform: translateY(3px);
+}
+
+.pet-mouse {
+  z-index: 3;
+  transition: transform 0.1s ease-out;
+  width: 30px;
+  height: 30px;
+  top: 65%;
+  left: 90%;
+  margin-left: -25px;
+  margin-top: -25px;
+}
+
+.pet-click {
+  z-index: 4;
+}
+
+.pet-left-click,
+.pet-right-click {
+  position: absolute;
+  transition: transform 0.1s ease-out;
+  width: 30px;
+  height: 30px;
+  top: 65%;
+  left: 90%;
+  margin-left: -25px;
+  margin-top: -25px;
+}
+
+.pet-menu {
+  position: fixed;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  z-index: 1003;
+  min-width: 120px;
+}
+
+.pet-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+  transition: background-color 0.2s;
+}
+
+.pet-menu-item:hover {
+  background-color: #f0f0f0;
+}
+
+.pet-menu-item-link {
+  color: #3b82f6;
+}
+
+.pet-menu-item-link:hover {
+  background-color: #dbeafe;
+}
+
+.pet-menu-item-danger {
+  color: #ef4444;
+}
+
+.pet-menu-item-danger:hover {
+  background-color: #fee2e2;
+}
+
+.pet-menu-submenu-container {
+  position: relative;
+}
+
+.pet-menu-item-submenu {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pet-menu-submenu {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: 4px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  min-width: 100px;
+  z-index: 1004;
+}
+
+.pet-menu-item-active {
+  background-color: #dbeafe;
+  color: #3b82f6;
+}
