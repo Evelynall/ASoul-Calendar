@@ -79,7 +79,9 @@ export default function SettingsView({
     setInputText,
     parseText,
     petEnabled,
-    setPetEnabled
+    setPetEnabled,
+    quoteConfig,
+    setQuoteConfig
 }) {
     const fileInputRef = useRef(null);
 
@@ -212,16 +214,6 @@ export default function SettingsView({
                         <Toggle value={mobileOptimize} onChange={v => { setMobileOptimize(v); localStorage.setItem(MOBILE_OPTIMIZE_KEY, v.toString()); }} />
                     </div>
 
-                    <div className="flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                        <div>
-                            <div className="font-medium">显示桌宠</div>
-                            <div className="text-xs text-slate-500">
-                                {petEnabled ? '显示可爱的桌宠，右键可打开菜单' : '已隐藏'}
-                            </div>
-                        </div>
-                        <Toggle value={petEnabled} onChange={v => { setPetEnabled(v); localStorage.setItem('pet_enabled', v.toString()); }} />
-                    </div>
-
                     <div className="p-4 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
                         <div className="flex items-center justify-between mb-3">
                             <div className="font-medium">自定义成员颜色</div>
@@ -253,6 +245,77 @@ export default function SettingsView({
                                 );
                             })}
                         </div>
+                    </div>
+                </div>
+            </SettingsSection>
+
+            {/* ── 桌宠设置 ── */}
+            <SettingsSection title="桌宠设置" icon="sparkles" iconColor="text-pink-500" description="自定义桌宠的显示和行为">
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                        <div>
+                            <div className="font-medium">显示桌宠</div>
+                            <div className="text-xs text-slate-500">
+                                {petEnabled ? '显示可爱的桌宠，右键可打开菜单' : '已隐藏'}
+                            </div>
+                        </div>
+                        <Toggle value={petEnabled} onChange={v => { setPetEnabled(v); localStorage.setItem('pet_enabled', v.toString()); }} />
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 rounded-lg border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                        <div>
+                            <div className="font-medium">启用随机对话</div>
+                            <div className="text-xs text-slate-500">
+                                {quoteConfig.enabled ? '桌宠会在随机时间自动说出语录' : '已禁用'}
+                            </div>
+                        </div>
+                        <Toggle value={quoteConfig.enabled} onChange={v => { setQuoteConfig(prev => ({ ...prev, enabled: v })); }} />
+                    </div>
+
+                    <div className="p-4 rounded-lg border dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                        <div className="font-medium mb-3">随机对话时间间隔</div>
+                        <div className="text-xs text-slate-500 mb-3">设置桌宠自动说话的时间范围</div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 mb-1.5 block">最小间隔（秒）</label>
+                                <input
+                                    type="number"
+                                    min="10"
+                                    max="300"
+                                    value={quoteConfig.minInterval / 1000}
+                                    onChange={e => {
+                                        const value = parseInt(e.target.value, 10) || 30;
+                                        const min = Math.min(value, quoteConfig.maxInterval / 1000);
+                                        setQuoteConfig(prev => ({ ...prev, minInterval: min * 1000 }));
+                                    }}
+                                    className="w-full p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-white dark:bg-slate-700 font-mono"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 mb-1.5 block">最大间隔（秒）</label>
+                                <input
+                                    type="number"
+                                    min="10"
+                                    max="600"
+                                    value={quoteConfig.maxInterval / 1000}
+                                    onChange={e => {
+                                        const value = parseInt(e.target.value, 10) || 120;
+                                        const max = Math.max(value, quoteConfig.minInterval / 1000);
+                                        setQuoteConfig(prev => ({ ...prev, maxInterval: max * 1000 }));
+                                    }}
+                                    className="w-full p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-white dark:bg-slate-700 font-mono"
+                                />
+                            </div>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-3">
+                            当前范围：{quoteConfig.minInterval / 1000} - {quoteConfig.maxInterval / 1000} 秒
+                        </div>
+                    </div>
+
+                    <div className="text-xs text-slate-500 space-y-1">
+                        <p>• 点击桌宠可以手动触发对话</p>
+                        <p>• 右键点击桌宠可以打开菜单</p>
+                        <p>• 桌宠位置会自动保存</p>
                     </div>
                 </div>
             </SettingsSection>
@@ -549,7 +612,7 @@ export default function SettingsView({
                         <div className="flex items-center justify-between">
                             <div>
                                 <div className="font-medium text-slate-900 dark:text-slate-100">版本信息</div>
-                                <div className="text-slate-500 dark:text-slate-400">v1.7.0</div>
+                                <div className="text-slate-500 dark:text-slate-400">v1.7.1</div>
                             </div>
                             <button onClick={() => setView('changelog')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
                                 <Icon name="file-text" className="w-4 h-4" />

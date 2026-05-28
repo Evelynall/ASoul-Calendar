@@ -1,6 +1,13 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.7.1',
+        date: '2026-05-28',
+        type: 'minor',
+        changes: [
+            { type: 'feature', text: '给桌宠提供了能说话的能力，欢迎大家提供更多的语录！' }
+        ]
+    }, {
         version: '1.7.0',
         date: '2026-05-27',
         type: 'minor',

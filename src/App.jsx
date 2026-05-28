@@ -49,6 +49,7 @@ import SettingsView from './views/SettingsView';
 // Components
 import AppHeader from './AppHeader';
 import Pet from './pet/Pet';
+import { getQuoteConfig, saveQuoteConfig, DEFAULT_QUOTE_CONFIG } from './pet/quotes';
 import NoteModal from './components/modals/NoteModal';
 import AddScheduleModal from './components/modals/AddScheduleModal';
 import ExternalLinkModal from './components/modals/ExternalLinkModal';
@@ -102,6 +103,7 @@ function App() {
     const [showDynamicBtn, setShowDynamicBtn] = useState(() => localStorage.getItem(SHOW_DYNAMIC_BTN_KEY) !== 'false');
     const [mobileOptimize, setMobileOptimize] = useState(() => localStorage.getItem(MOBILE_OPTIMIZE_KEY) !== 'false');
     const [petEnabled, setPetEnabled] = useState(() => localStorage.getItem('pet_enabled') !== 'false');
+    const [quoteConfig, setQuoteConfig] = useState(() => getQuoteConfig());
     const [searchPageSize, setSearchPageSize] = useState(() => {
         const saved = localStorage.getItem(SEARCH_PAGE_SIZE_KEY);
         return saved ? parseInt(saved, 10) : 10;
@@ -184,6 +186,7 @@ function App() {
     useEffect(() => { localStorage.setItem(ANIME_VIEW_KEY, view); }, [view]);
     useEffect(() => { localStorage.setItem(SEARCH_PAGE_SIZE_KEY, searchPageSize.toString()); }, [searchPageSize]);
     useEffect(() => { setSearchCurrentPage(1); }, [searchQuery]);
+    useEffect(() => { saveQuoteConfig(quoteConfig); }, [quoteConfig]);
 
     // 同步冷却倒计时
     useEffect(() => {
@@ -490,7 +493,7 @@ function App() {
         <>
             <FirstTimeNotice />
             <NetworkStatus />
-            <Pet isEnabled={petEnabled} onToggleEnabled={setPetEnabled} />
+            <Pet isEnabled={petEnabled} onToggleEnabled={setPetEnabled} quoteConfig={quoteConfig} />
 
             {/* 基础日程库拉取失败提示 */}
             {fetchError && (
@@ -610,6 +613,7 @@ function App() {
                             inputText={inputText} setInputText={setInputText}
                             parseText={parseText}
                             petEnabled={petEnabled} setPetEnabled={setPetEnabled}
+                            quoteConfig={quoteConfig} setQuoteConfig={setQuoteConfig}
                         />
                     )}
                 </main>

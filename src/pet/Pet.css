@@ -1,6 +1,6 @@
 .pet-container {
   position: fixed;
-  z-index: 1000;
+  z-index: 1001;
 }
 
 .pet-toggle {
@@ -76,6 +76,7 @@
   transform: translateY(3px);
 }
 
+
 .pet-mouse {
   z-index: 3;
   transition: transform 0.1s ease-out;
@@ -105,11 +106,11 @@
 
 .pet-menu {
   position: fixed;
+  z-index: 1004;
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   padding: 4px;
-  z-index: 1003;
   min-width: 120px;
 }
 
@@ -135,8 +136,14 @@
   color: #3b82f6;
 }
 
+.pet-menu-item-danger:hover {
+  background-color: #fee2e2;
+  color: #dc2626;
+}
+
 .pet-menu-item-link:hover {
   background-color: #dbeafe;
+  color: #3b82f6;
 }
 
 .pet-menu-item-danger {
@@ -173,4 +180,44 @@
 .pet-menu-item-active {
   background-color: #dbeafe;
   color: #3b82f6;
+}
+
+.pet-dialog {
+  position: fixed;
+  z-index: 1003;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.pet-dialog-bg {
+  width: 200px;
+  height: auto;
+  display: block;
+}
+
+.pet-dialog-content {
+  position: absolute;
+  top: 3%;
+  left: 15%;
+  width: 70%;
+  height: 60%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow: hidden;
+}
+
+.pet-dialog-link {
+  color: #1890ff;
+  text-decoration: none;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.pet-dialog-link:hover {
+  text-decoration: underline;
 }
