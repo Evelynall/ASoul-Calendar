@@ -5,6 +5,27 @@ import ChangelogView from '../components/ChangelogView';
 import { deleteDatabase } from '../indexedDBStorage';
 import { isUsingDefaultConfig } from '../supabaseClient';
 import { extractUserDataFromSchedules } from '../hooks/useSchedules';
+
+const Toggle = ({ value, onChange }) => (
+    <button
+        onClick={() => onChange(!value)}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${value ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
+    >
+        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
+);
+
+const createTimestamp = () => new Date().toISOString().replace(/\D/g, '').slice(0, 14);
+
+const downloadJson = (data, filename) => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+};
+
 import {
     DEFAULT_MEMBER_CONFIG,
     BASE_SCHEDULES_VERSION_KEY,
@@ -96,21 +117,13 @@ export default function SettingsView({
     // 导出用户数据
     const exportUserData = () => {
         const userData = extractUserDataFromSchedules(schedules);
-        const blob = new Blob([JSON.stringify(userData, null, 2)], { type: 'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `user-data-${new Date().toISOString().replace(/[\-:T.]/g, '').slice(0, 14)}.json`;
-        a.click();
+        downloadJson(userData, `user-data-${createTimestamp()}.json`);
     };
 
     const exportUserCreated = () => {
         const list = schedules.filter(s => s.isUserCreated).map(s => ({ ...s }));
         if (list.length === 0) { alert('没有用户创建的日程可以导出'); return; }
-        const blob = new Blob([JSON.stringify(list, null, 2)], { type: 'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `user-created-schedules-${new Date().toISOString().replace(/[\-:T.]/g, '').slice(0, 14)}.json`;
-        a.click();
+        downloadJson(list, `user-created-schedules-${createTimestamp()}.json`);
     };
 
     const exportClean = () => {
@@ -119,11 +132,7 @@ export default function SettingsView({
             delete c.completed;
             return c;
         });
-        const blob = new Blob([JSON.stringify(cleaned, null, 2)], { type: 'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `schedules-clean-${new Date().toISOString().replace(/[\-:T.]/g, '').slice(0, 14)}.json`;
-        a.click();
+        downloadJson(cleaned, `schedules-clean-${createTimestamp()}.json`);
     };
 
     const clearUserData = () => {
@@ -142,16 +151,6 @@ export default function SettingsView({
             alert('用户数据已清空');
         }
     };
-
-    // 开关组件
-    const Toggle = ({ value, onChange }) => (
-        <button
-            onClick={() => onChange(!value)}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${value ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
-        >
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`} />
-        </button>
-    );
 
     return (
         <div className="h-full max-w-2xl mx-auto p-4 md:p-8 overflow-y-auto custom-scrollbar space-y-6 text-slate-900 dark:text-slate-100">

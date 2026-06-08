@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import './Pet.css';
-import { QUOTES, getQuoteConfig } from './quotes';
+import { QUOTES } from './quotes';
 
 const PET_WIDTH = 200;
 const PET_HEIGHT = 200;
@@ -127,7 +127,7 @@ const Pet = ({ isEnabled, onToggleEnabled, quoteConfig }) => {
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
-    const showDialog = (options) => {
+    const showDialog = useCallback((options) => {
         const newDialog = {
             ...options,
             id: dialogIdCounter.current++
@@ -141,7 +141,7 @@ const Pet = ({ isEnabled, onToggleEnabled, quoteConfig }) => {
         } else {
             setDialogs(prev => [...prev, newDialog]);
         }
-    };
+    }, []);
 
     const closeDialog = (id) => {
         setDialogs(prev => prev.filter(d => d.id !== id));
@@ -151,15 +151,15 @@ const Pet = ({ isEnabled, onToggleEnabled, quoteConfig }) => {
         setDialogs([]);
     };
 
-    const getRandomQuote = () => {
+    const getRandomQuote = useCallback(() => {
         const availableQuotes = QUOTES.filter(q =>
             q.character === 'all' || q.character === currentCharacter
         );
         if (availableQuotes.length === 0) return null;
         return availableQuotes[Math.floor(Math.random() * availableQuotes.length)];
-    };
+    }, [currentCharacter]);
 
-    const showRandomQuote = () => {
+    const showRandomQuote = useCallback(() => {
         const quote = getRandomQuote();
         if (quote) {
             showDialog({
@@ -169,17 +169,8 @@ const Pet = ({ isEnabled, onToggleEnabled, quoteConfig }) => {
                 closeOnClick: quote.closeOnClick
             });
         }
-    };
+    }, [getRandomQuote, showDialog]);
 
-    const scheduleNextQuote = () => {
-        if (!quoteConfig.enabled) return;
-
-        const interval = Math.random() * (quoteConfig.maxInterval - quoteConfig.minInterval) + quoteConfig.minInterval;
-        quoteTimerRef.current = setTimeout(() => {
-            showRandomQuote();
-            scheduleNextQuote();
-        }, interval);
-    };
 
     const handleMouseDown = (e) => {
         if (e.button === 0) {
@@ -200,7 +191,7 @@ const Pet = ({ isEnabled, onToggleEnabled, quoteConfig }) => {
         }
     };
 
-    const handleMouseMove = (e) => {
+    const handleMouseMove = useCallback((e) => {
         if (isDragging) {
             const newX = e.clientX - dragOffset.x;
             const newY = e.clientY - dragOffset.y;
@@ -221,9 +212,9 @@ const Pet = ({ isEnabled, onToggleEnabled, quoteConfig }) => {
         });
 
         lastMousePos.current = { x: e.clientX, y: e.clientY };
-    };
+    }, [dragOffset.x, dragOffset.y, isDragging]);
 
-    const handleMouseUp = (e) => {
+    const handleMouseUp = useCallback((e) => {
         setIsDragging(false);
 
         const deltaX = Math.abs(e.clientX - clickStartPos.current.x);
@@ -232,7 +223,7 @@ const Pet = ({ isEnabled, onToggleEnabled, quoteConfig }) => {
         if (deltaX < 5 && deltaY < 5) {
             showRandomQuote();
         }
-    };
+    }, [showRandomQuote]);
 
     const handleContextMenu = (e) => {
         e.preventDefault();
@@ -320,7 +311,7 @@ const Pet = ({ isEnabled, onToggleEnabled, quoteConfig }) => {
             window.removeEventListener('click', handleClick);
             window.removeEventListener('click', handleGlobalClick);
         };
-    }, [isDragging, dragOffset, position, isMenuOpen]);
+    }, [handleMouseMove, handleMouseUp, isMenuOpen]);
 
     useEffect(() => {
         localStorage.setItem('pet_position', JSON.stringify(position));
@@ -329,6 +320,13 @@ const Pet = ({ isEnabled, onToggleEnabled, quoteConfig }) => {
     useEffect(() => {
         if (!isEnabled || isMobile || !quoteConfig.enabled) return;
 
+        const scheduleNextQuote = () => {
+            quoteTimerRef.current = setTimeout(() => {
+                showRandomQuote();
+                scheduleNextQuote();
+            }, Math.random() * (quoteConfig.maxInterval - quoteConfig.minInterval) + quoteConfig.minInterval);
+        };
+
         scheduleNextQuote();
 
         return () => {
@@ -336,7 +334,7 @@ const Pet = ({ isEnabled, onToggleEnabled, quoteConfig }) => {
                 clearTimeout(quoteTimerRef.current);
             }
         };
-    }, [isEnabled, isMobile, currentCharacter, quoteConfig]);
+    }, [isEnabled, isMobile, quoteConfig.enabled, quoteConfig.maxInterval, quoteConfig.minInterval, showRandomQuote]);
 
     if (!isEnabled || isMobile) return null;
 

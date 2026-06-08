@@ -257,7 +257,7 @@ function getQuoteConfig() {
         if (saved) {
             return JSON.parse(saved);
         }
-    } catch (e) {
+    } catch {
         console.warn('Failed to load quote config from localStorage');
     }
     return { ...DEFAULT_QUOTE_CONFIG };
@@ -266,7 +266,7 @@ function getQuoteConfig() {
 function saveQuoteConfig(config) {
     try {
         localStorage.setItem(QUOTE_CONFIG_STORAGE_KEY, JSON.stringify(config));
-    } catch (e) {
+    } catch {
         console.warn('Failed to save quote config to localStorage');
     }
 }

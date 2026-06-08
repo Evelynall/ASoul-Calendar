@@ -39,6 +39,12 @@ export function useUrlParamLink({ schedules, isLoadingBase, setSchedules, setCur
         alert(`已成功为日程「${targetSchedule.title || targetSchedule.subTitle}」设置链接：\n\n${decodedLink}`);
     }, [setSchedules, setCurrentDate, setView]);
 
+    const openCandidateModal = useCallback((candidates, pendingLink) => {
+        queueMicrotask(() => {
+            setSetLinkCandidateModal({ isOpen: true, candidates, pendingLink });
+        });
+    }, []);
+
     useEffect(() => {
         if (isLoadingBase || schedules.length === 0 || urlParamHandledRef.current) return;
 
@@ -99,7 +105,7 @@ export function useUrlParamLink({ schedules, isLoadingBase, setSchedules, setCur
             if (sameGroupSchedules.length === 1) {
                 applyScheduleLink(sameGroupSchedules[0], decodedLink);
             } else {
-                setSetLinkCandidateModal({ isOpen: true, candidates: sameGroupSchedules, pendingLink: decodedLink });
+                openCandidateModal(sameGroupSchedules, decodedLink);
             }
             return;
         }
@@ -112,11 +118,11 @@ export function useUrlParamLink({ schedules, isLoadingBase, setSchedules, setCur
         if (hourMatches.length === 1) {
             applyScheduleLink(hourMatches[0], decodedLink);
         } else if (hourMatches.length > 1) {
-            setSetLinkCandidateModal({ isOpen: true, candidates: hourMatches, pendingLink: decodedLink });
+            openCandidateModal(hourMatches, decodedLink);
         } else {
-            setSetLinkCandidateModal({ isOpen: true, candidates: sameGroupSchedules, pendingLink: decodedLink });
+            openCandidateModal(sameGroupSchedules, decodedLink);
         }
-    }, [isLoadingBase, schedules, applyScheduleLink]);
+    }, [isLoadingBase, schedules, applyScheduleLink, openCandidateModal]);
 
     return {
         setLinkCandidateModal,

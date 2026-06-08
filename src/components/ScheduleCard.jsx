@@ -12,7 +12,6 @@ const ScheduleCard = ({
     setTempNote,
     setTempLink,
     setSchedules,
-    setExternalLinkModal,
     showSearchBtn = true,
     showDynamicBtn = true,
     mobileOptimize = true
@@ -35,7 +34,7 @@ const ScheduleCard = ({
     const openUrl = (url) => {
         const targetUrl = getMobileUrl(url);
         if (targetUrl.startsWith('bilibili://')) {
-            window.location.href = targetUrl;
+            window.location.assign(targetUrl);
         } else {
             window.open(targetUrl, '_blank');
         }
@@ -104,7 +103,7 @@ const ScheduleCard = ({
                                 const href = getMobileUrl(item.officialRecordUrl);
                                 return <a href={href} target={href.startsWith('bilibili://') ? undefined : '_blank'} rel="noopener noreferrer" title="观看官方录播"
                                     className="p-1 bg-black/5 hover:bg-black/10 rounded-full"
-                                    onClick={(e) => { e.stopPropagation(); if (href.startsWith('bilibili://')) e.preventDefault(), window.location.href = href; }}>
+                                    onClick={(e) => { e.stopPropagation(); if (href.startsWith('bilibili://')) e.preventDefault(), window.location.assign(href); }}>
                                     <Icon name="record-play" className="w-3 h-3" />
                                 </a>;
                             } else if (liveRoomUrl) {
@@ -121,7 +120,7 @@ const ScheduleCard = ({
                             const href = getMobileUrl(item.link);
                             return <a href={href} target={href.startsWith('bilibili://') ? undefined : '_blank'} rel="noopener noreferrer" title="跳转链接"
                                 className="p-1 bg-black/5 hover:bg-black/10 rounded-full"
-                                onClick={(e) => { e.stopPropagation(); if (href.startsWith('bilibili://')) e.preventDefault(), window.location.href = href; }}>
+                                onClick={(e) => { e.stopPropagation(); if (href.startsWith('bilibili://')) e.preventDefault(), window.location.assign(href); }}>
                                 <Icon name="external-link" className="w-3 h-3" />
                             </a>;
                         })()}

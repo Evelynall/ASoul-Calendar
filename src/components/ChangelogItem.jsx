@@ -1,5 +1,34 @@
 import Icon from './Icon';
 
+const renderChangeText = (change) => {
+    if (!change.links?.length) return change.text;
+
+    const nodes = [];
+    let cursor = 0;
+
+    change.links.forEach((link, index) => {
+        const start = change.text.indexOf(link.label, cursor);
+        if (start === -1) return;
+
+        if (start > cursor) nodes.push(change.text.slice(cursor, start));
+        nodes.push(
+            <a
+                key={`${link.href}-${index}`}
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 dark:text-blue-400 hover:underline"
+            >
+                {link.label}
+            </a>
+        );
+        cursor = start + link.label.length;
+    });
+
+    if (cursor < change.text.length) nodes.push(change.text.slice(cursor));
+    return nodes;
+};
+
 const ChangelogItem = ({ version, date, type, changes }) => {
     const typeColors = {
         major: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
@@ -47,7 +76,7 @@ const ChangelogItem = ({ version, date, type, changes }) => {
                                 <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
                                     {changeType.label}:
                                 </span>
-                                <span className="text-sm ml-2 changelog-link" dangerouslySetInnerHTML={{ __html: change.text }} />
+                                <span className="text-sm ml-2 changelog-link">{renderChangeText(change)}</span>
                             </div>
                         </div>
                     );

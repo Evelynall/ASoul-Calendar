@@ -13,7 +13,6 @@ export default function CalendarView({
     schedules,
     isLoadingBase,
     isSyncing,
-    currentDate,
     setCurrentDate,
     setView,
     setIsAddModalOpen,
@@ -26,7 +25,6 @@ export default function CalendarView({
     syncId,
     handleSyncToGist,
     handleUploadToSupabase,
-    isGistSyncing,
     // ScheduleCard props
     toggleComplete,
     toggleFavorite,
@@ -149,7 +147,7 @@ export default function CalendarView({
                                         const blob = new Blob([JSON.stringify(userData, null, 2)], { type: 'application/json' });
                                         const a = document.createElement('a');
                                         a.href = URL.createObjectURL(blob);
-                                        a.download = `user-data-${new Date().toISOString().replace(/[\-:T.]/g, '').slice(0, 14)}.json`;
+                                        a.download = `user-data-${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}.json`;
                                         a.click();
                                     }}
                                     className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"

@@ -1,29 +1,19 @@
 import { useState, useMemo, useEffect } from 'react';
 import './App.css';
-import { getSupabaseConfig, saveSupabaseConfig, isUsingDefaultConfig } from './supabaseClient';
-import { getSyncId, saveSyncId, uploadToSupabase, downloadFromSupabase, getTimeUntilNextSync } from './supabaseSync';
+import { getSupabaseConfig, saveSupabaseConfig } from './supabaseClient';
+import { getSyncId, saveSyncId, getTimeUntilNextSync } from './supabaseSync';
 import Icon from './components/Icon';
 import FirstTimeNotice from './FirstTimeNotice';
 import NetworkStatus from './components/NetworkStatus';
 import LinksView from './components/LinksView';
-import ChangelogNotification, { markChangelogAsRead } from './components/ChangelogNotification';
-import { syncIcsCalendars, parseICS } from './services/icsParser';
-import {
-    uploadToGist,
-    downloadFromGist,
-    mergeUserData
-} from './services/gistSync';
-
+import ChangelogNotification from './components/ChangelogNotification';
+import { markChangelogAsRead } from './changelogUtils';
 import {
     ICS_CONFIG_KEY,
-    GIST_TOKEN_KEY,
     GIST_ID_KEY,
     CUSTOM_COLORS_KEY,
     LINKS_KEY,
     ANIME_VIEW_KEY,
-    USER_DATA_KEY,
-    BASE_SCHEDULES_KEY,
-    SUPABASE_AUTO_SYNC_KEY,
     DISPLAY_MODE_KEY,
     SPECIAL_GROUP_COLOR_KEY,
     SHOW_SEARCH_BTN_KEY,
@@ -31,14 +21,18 @@ import {
     MOBILE_OPTIMIZE_KEY,
     SEARCH_PAGE_SIZE_KEY
 } from './constants';
-import { formatDateString, toZeroDate, extractUrlFromText, isTouchDevice, toBilibiliScheme } from './utils';
+import { formatDateString, toZeroDate } from './utils';
 import { getInitialLinks } from './data/defaultLinks';
 
 // Hooks
-import { useSchedules, mergeSchedules, extractUserDataFromSchedules } from './hooks/useSchedules';
+import { useSchedules } from './hooks/useSchedules';
 import { useAutoSync } from './hooks/useAutoSync';
 import { useUrlParamLink } from './hooks/useUrlParamLink';
 import { useTheme } from './hooks/useTheme';
+import { useScheduleCommands } from './hooks/useScheduleCommands';
+import { useDataImport } from './hooks/useDataImport';
+import { useCloudSyncActions } from './hooks/useCloudSyncActions';
+import { loadGistToken, saveGistToken } from './services/credentialStorage';
 
 // Views
 import CalendarView from './views/CalendarView';
@@ -120,7 +114,7 @@ function App() {
     });
 
     // ── Gist 同步 ────────────────────────────────────────────────────────────
-    const [gistToken, setGistToken] = useState(() => localStorage.getItem(GIST_TOKEN_KEY) || '');
+    const [gistToken, setGistToken] = useState(() => loadGistToken());
     const [gistId, setGistId] = useState(() => localStorage.getItem(GIST_ID_KEY) || '');
     const [isGistSyncing, setIsGistSyncing] = useState(false);
 
@@ -176,16 +170,15 @@ function App() {
 
     // ── 副作用：持久化 ────────────────────────────────────────────────────────
     useEffect(() => { localStorage.setItem(ICS_CONFIG_KEY, JSON.stringify(icsUrls)); }, [icsUrls]);
-    useEffect(() => { if (gistToken) localStorage.setItem(GIST_TOKEN_KEY, gistToken); else localStorage.removeItem(GIST_TOKEN_KEY); }, [gistToken]);
+    useEffect(() => { saveGistToken(gistToken); }, [gistToken]);
     useEffect(() => { if (gistId) localStorage.setItem(GIST_ID_KEY, gistId); else localStorage.removeItem(GIST_ID_KEY); }, [gistId]);
-    useEffect(() => { localStorage.setItem(CUSTOM_COLORS_KEY, JSON.stringify(customColors)); setSchedules(prev => [...prev]); }, [customColors]);
-    useEffect(() => { setSchedules(prev => [...prev]); }, [useSpecialGroupColor]);
+    useEffect(() => { localStorage.setItem(CUSTOM_COLORS_KEY, JSON.stringify(customColors)); setSchedules(prev => [...prev]); }, [customColors, setSchedules]);
+    useEffect(() => { setSchedules(prev => [...prev]); }, [useSpecialGroupColor, setSchedules]);
     useEffect(() => { localStorage.setItem(LINKS_KEY, JSON.stringify(links)); }, [links]);
     useEffect(() => { if (showCustomConfig && supabaseUrl && supabaseKey) { saveSupabaseConfig(supabaseUrl, supabaseKey); } else if (!showCustomConfig) { saveSupabaseConfig('', ''); } }, [supabaseUrl, supabaseKey, showCustomConfig]);
     useEffect(() => { if (syncId) saveSyncId(syncId); }, [syncId]);
     useEffect(() => { localStorage.setItem(ANIME_VIEW_KEY, view); }, [view]);
     useEffect(() => { localStorage.setItem(SEARCH_PAGE_SIZE_KEY, searchPageSize.toString()); }, [searchPageSize]);
-    useEffect(() => { setSearchCurrentPage(1); }, [searchQuery]);
     useEffect(() => { saveQuoteConfig(quoteConfig); }, [quoteConfig]);
 
     // 同步冷却倒计时
@@ -216,275 +209,56 @@ function App() {
     }, [schedules, searchQuery]);
 
     // ── 操作函数 ─────────────────────────────────────────────────────────────
-    const toggleComplete = (id) => setSchedules(prev => prev.map(s => s.id === id ? { ...s, completed: !s.completed } : s));
-    const toggleFavorite = (id) => setSchedules(prev => prev.map(s => {
-        if (s.id !== id) return s;
-        const newFav = !s.isFavorite;
-        return { ...s, isFavorite: newFav, isAnime: newFav ? true : false };
-    }));
+    const {
+        toggleComplete,
+        toggleFavorite,
+        saveNote,
+        handleBilibiliSearch,
+        handleManualAdd,
+        parseText
+    } = useScheduleCommands({
+        schedules,
+        setSchedules,
+        setCurrentDate,
+        setView,
+        newSchedule,
+        setIsAddModalOpen,
+        tempNote,
+        tempLink,
+        setEditingNoteId,
+        setInputText,
+        mobileOptimize
+    });
 
-    const saveNote = (id) => {
-        let finalLink = tempLink;
-        if (tempLink.trim()) {
-            const extracted = extractUrlFromText(tempLink);
-            if (extracted) finalLink = extracted;
-        }
-        setSchedules(prev => prev.map(s => s.id === id ? { ...s, note: tempNote, link: finalLink } : s));
-        setEditingNoteId(null);
-    };
+    const {
+        handleSyncIcs,
+        handleImportJSON,
+        handleImportICSFile
+    } = useDataImport({ schedules, setSchedules, icsUrls, setIsSyncing, setView });
 
-    const handleBilibiliSearch = (item) => {
-        const parts = item.date.split('/');
-        const keyword = encodeURIComponent(`${item.category} ${parts[0]}.${parseInt(parts[1], 10)}.${parseInt(parts[2], 10)}`);
-        const url = `https://search.bilibili.com/all?keyword=${keyword}`;
-        if (mobileOptimize && isTouchDevice()) {
-            window.location.href = toBilibiliScheme(url);
-        } else {
-            window.open(url, '_blank');
-        }
-    };
-
-    const handleManualAdd = () => {
-        if (!newSchedule.title) { alert('标题为必填项'); return; }
-        let formattedDate = newSchedule.date.replace(/-/g, '/');
-        let time = newSchedule.time;
-        if (newSchedule.isAnime) { formattedDate = '追番/追番'; time = '追番'; }
-        const id = `manual-${formattedDate}-${time}-${Math.random().toString(36).substr(2, 4)}`;
-        setSchedules(prev => [...prev, { ...newSchedule, id, date: formattedDate, time, completed: false, note: '', isUserCreated: true }]);
-        setIsAddModalOpen(false);
-        if (!newSchedule.isAnime) setCurrentDate(toZeroDate(formattedDate));
-        setView(newSchedule.isAnime ? 'anime' : 'calendar');
-    };
-
-    const handleSyncIcs = async () => {
-        if (!icsUrls || !icsUrls.trim()) { alert('请先在设置中配置 ICS 订阅链接'); setView('settings'); return; }
-        setIsSyncing(true);
-        try {
-            const { newItems, totalAdded } = await syncIcsCalendars(icsUrls, schedules);
-            if (newItems.length > 0) { setSchedules(prev => [...prev, ...newItems]); alert(`同步成功！新增了 ${totalAdded} 项日程。`); }
-            else alert('同步完成，暂无新日程。');
-        } catch (err) { alert('同步失败：' + err.message); }
-        finally { setIsSyncing(false); }
-    };
-
-    const handleImportJSON = (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const imported = JSON.parse(e.target.result);
-                let userData = {};
-                if (Array.isArray(imported)) {
-                    alert('检测到旧格式或特殊属性数据，正在转换...');
-                    imported.forEach(s => {
-                        if (s.isUserCreated) { userData[s.id] = { ...s, isUserCreated: true }; }
-                        else {
-                            const m = {};
-                            if (s.completed) m.completed = true;
-                            if (s.note) m.note = s.note;
-                            if (s.link && !s.liveRoomUrl) m.link = s.link;
-                            if (s.isFavorite) m.isFavorite = true;
-                            if (s.isAnime) m.isAnime = true;
-                            if (Object.keys(m).length > 0) userData[s.id] = m;
-                        }
-                    });
-                } else if (typeof imported === 'object') {
-                    userData = imported;
-                } else { throw new Error('文件格式不正确'); }
-
-                const current = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
-                let added = 0, updated = 0, merged = 0;
-                Object.keys(userData).forEach(id => {
-                    if (current[id]) {
-                        if (userData[id].isUserCreated) { current[id] = userData[id]; updated++; }
-                        else {
-                            const ex = current[id]; const im = userData[id];
-                            if (im.note) { if (ex.note && ex.note !== im.note) { current[id].note = `${ex.note}\n---\n${im.note}`; merged++; } else { current[id].note = im.note; } }
-                            if (im.completed) current[id].completed = true;
-                            if (im.link) current[id].link = im.link;
-                            if (im.isFavorite) current[id].isFavorite = true;
-                            if (im.isAnime) current[id].isAnime = true;
-                            updated++;
-                        }
-                    } else { current[id] = userData[id]; added++; }
-                });
-
-                localStorage.setItem(USER_DATA_KEY, JSON.stringify(current));
-                const base = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
-                setSchedules(mergeSchedules(base, current));
-
-                let msg = '导入完成！\n\n';
-                if (added) msg += `新增 ${added} 条数据\n`;
-                if (updated) msg += `更新 ${updated} 条数据\n`;
-                if (merged) msg += `合并 ${merged} 条备注\n`;
-                alert(msg);
-            } catch (err) { alert('导入失败：' + err.message); }
-            event.target.value = '';
-        };
-        reader.readAsText(file);
-    };
-
-    const handleImportICSFile = async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const parsed = parseICS(e.target.result);
-                if (parsed.length === 0) { alert('未找到有效的日程数据'); return; }
-                const existingIds = new Set(schedules.map(s => s.id));
-                const newEvents = parsed.filter(ev => !existingIds.has(ev.id));
-                if (newEvents.length === 0) { alert('所有日程都已存在，没有新数据导入'); return; }
-                if (confirm(`找到 ${parsed.length} 个日程，其中 ${newEvents.length} 个是新日程。是否确认导入？`)) {
-                    setSchedules(prev => [...prev, ...newEvents]);
-                    alert(`成功导入 ${newEvents.length} 个新日程！`);
-                }
-            } catch (err) { alert('ICS文件解析失败：' + err.message); }
-            event.target.value = '';
-        };
-        reader.onerror = () => { alert('文件读取失败'); event.target.value = ''; };
-        reader.readAsText(file);
-    };
-
-    // ── Gist 同步操作 ────────────────────────────────────────────────────────
-    const handleSyncToGist = async () => {
-        if (!gistToken) { alert('请先配置 GitHub Personal Access Token'); return; }
-        setIsGistSyncing(true);
-        try {
-            const userData = extractUserDataFromSchedules(schedules);
-            const result = await uploadToGist(gistToken, gistId, userData);
-            if (!gistId) setGistId(result.gistId);
-            alert(`数据已成功同步到 GitHub Gist！\n\n同步的数据：\n- 用户数据记录：${result.dataCount} 条\n- 文件大小：${result.fileSizeKB} KB`);
-        } catch (err) { alert('同步失败：' + err.message); }
-        finally { setIsGistSyncing(false); }
-    };
-
-    const handleLoadFromGist = async () => {
-        if (!gistToken || !gistId) { alert('请先配置 GitHub Personal Access Token 和 Gist ID'); return; }
-        setIsGistSyncing(true);
-        try {
-            const { userData, fileSizeKB } = await downloadFromGist(gistToken, gistId);
-            const current = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
-            const { mergedData, addedCount, updatedCount } = mergeUserData(current, userData);
-            localStorage.setItem(USER_DATA_KEY, JSON.stringify(mergedData));
-            setSchedules(mergeSchedules(JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]'), mergedData));
-            alert(`成功从 Gist 加载数据！\n\n- 新增：${addedCount} 条\n- 更新：${updatedCount} 条\n- 文件大小：${fileSizeKB} KB`);
-        } catch (err) { alert('读取失败：' + err.message); }
-        finally { setIsGistSyncing(false); }
-    };
-
-    const handleReplaceFromGist = async () => {
-        if (!gistToken || !gistId) { alert('请先配置 GitHub Personal Access Token 和 Gist ID'); return; }
-        if (!confirm('此操作将用 Gist 中的用户数据完全替换本地用户数据，确定继续吗？\n\n注意：基础日程库不会被影响。')) return;
-        setIsGistSyncing(true);
-        try {
-            const { userData, fileSizeKB } = await downloadFromGist(gistToken, gistId);
-            localStorage.setItem(USER_DATA_KEY, JSON.stringify(userData));
-            setSchedules(mergeSchedules(JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]'), userData));
-            alert(`成功从 Gist 恢复用户数据！\n\n- 用户数据记录：${Object.keys(userData).length} 条\n- 文件大小：${fileSizeKB} KB`);
-        } catch (err) { alert('读取失败：' + err.message); }
-        finally { setIsGistSyncing(false); }
-    };
-
-    // ── Supabase 同步操作 ────────────────────────────────────────────────────
-    const handleUploadToSupabase = async () => {
-        if (!syncId || !syncId.trim()) { alert('请先设置同步 ID'); return; }
-        setIsSupabaseSyncing(true);
-        try {
-            const userData = extractUserDataFromSchedules(schedules);
-
-            const dataCount = Object.keys(userData).length;
-            const dataSizeKB = (new Blob([JSON.stringify(userData)]).size / 1024).toFixed(2);
-
-            if (isUsingDefaultConfig()) {
-                const warn = dataSizeKB > 80 ? '\n\n⚠️ 数据接近 100 KB 限制，建议使用自定义 Supabase 服务器' : '';
-                if (!confirm(`准备上传数据到默认云同步服务\n\n用户数据记录：${dataCount} 条\n文件大小：${dataSizeKB} KB / 100 KB${warn}\n\n是否继续？`)) {
-                    setIsSupabaseSyncing(false); return;
-                }
-            }
-
-            await uploadToSupabase(userData, syncId);
-            alert(`数据已成功上传到 Supabase！\n\n同步 ID: ${syncId}\n用户数据记录：${dataCount} 条\n文件大小：${dataSizeKB} KB${isUsingDefaultConfig() ? ' / 100 KB' : ''}`);
-            setSyncCooldown(300);
-        } catch (err) { alert('上传失败：' + err.message); }
-        finally { setIsSupabaseSyncing(false); }
-    };
-
-    const handleDownloadFromSupabase = async () => {
-        if (!syncId || !syncId.trim()) { alert('请先设置同步 ID'); return; }
-        setIsSupabaseSyncing(true);
-        try {
-            const result = await downloadFromSupabase(syncId);
-            const userData = result.user_data;
-            if (!userData || typeof userData !== 'object') throw new Error('数据格式不正确');
-
-            const current = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
-            let added = 0, updated = 0;
-            Object.keys(userData).forEach(id => {
-                if (current[id]) {
-                    if (userData[id].isUserCreated) { current[id] = userData[id]; }
-                    else {
-                        const ex = current[id]; const im = userData[id];
-                        if (im.note) { if (ex.note && ex.note !== im.note) current[id].note = `${ex.note}\n---\n${im.note}`; else current[id].note = im.note; }
-                        if (im.completed) current[id].completed = true;
-                        if (im.link) current[id].link = im.link;
-                        if (im.isFavorite) current[id].isFavorite = true;
-                        if (im.isAnime) current[id].isAnime = true;
-                    }
-                    updated++;
-                } else { current[id] = userData[id]; added++; }
-            });
-
-            localStorage.setItem(USER_DATA_KEY, JSON.stringify(current));
-            const base = JSON.parse(localStorage.getItem(BASE_SCHEDULES_KEY) || '[]');
-            setSchedules(mergeSchedules(base, current));
-
-            alert(`成功从 Supabase 下载数据！\n\n同步 ID: ${syncId}\n新增：${added} 条\n更新：${updated} 条\n更新时间：${new Date(result.updated_at).toLocaleString('zh-CN')}`);
-            setSyncCooldown(300);
-        } catch (err) { alert('下载失败：' + err.message); }
-        finally { setIsSupabaseSyncing(false); }
-    };
-
-    // 文本解析
-    const parseText = (text) => {
-        if (!text.trim()) return;
-        const lines = text.split('\n').map(l => l.trim()).filter(l => l !== '');
-        const newSchedules = [];
-        let activeDate = '';
-        const dateRegex = /(\d{4}[\/\-]\d{2}[\/\-]\d{2})/;
-        const timeRegex = /^(\d{2}:\d{2})$/;
-        const fingerprint = (item) => `${item.date}|${item.time}|${item.subTitle}|${item.title}`.replace(/\s+/g, '');
-        const existing = new Set(schedules.map(fingerprint));
-
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            const dM = line.match(dateRegex); if (dM) { activeDate = dM[1].replace(/-/g, '/'); continue; }
-            const tM = line.match(timeRegex);
-            if (tM && activeDate) {
-                const time = tM[1], type = lines[i + 1] || '未知', subTitle = lines[i + 2] || '';
-                const raw = lines[i + 3] || ''; const finalTitle = (raw === '动态' || !raw) ? subTitle : raw;
-                const fp = `${activeDate}|${time}|${subTitle}|${finalTitle}`.replace(/\s+/g, '');
-                if (existing.has(fp)) { i += 3; continue; }
-                let category = '其他'; const cs = subTitle + finalTitle;
-                if (cs.includes('贝拉')) category = '贝拉'; else if (cs.includes('嘉然')) category = '嘉然';
-                else if (cs.includes('乃琳')) category = '乃琳'; else if (cs.includes('思诺')) category = '思诺';
-                else if (cs.includes('心宜')) category = '心宜'; else if (cs.includes('A-SOUL')) category = 'A-SOUL';
-                else if (cs.includes('有点宜思') || cs.includes('心宜思诺') || cs.includes('小心思')) category = '小心思';
-                const id = `parse-${activeDate}-${time}-${Math.random().toString(36).substr(2, 4)}`.replace(/\s+/g, '');
-                newSchedules.push({ id, date: activeDate, time, type, subTitle, title: finalTitle, category, completed: false, note: '' });
-                existing.add(fp); i += 3;
-            }
-        }
-        if (newSchedules.length > 0) { setSchedules(prev => [...prev, ...newSchedules]); alert(`成功导入 ${newSchedules.length} 项新日程。`); setInputText(''); setView('calendar'); }
-        else if (text.trim()) alert('未发现新日程。');
-    };
+    const {
+        handleSyncToGist,
+        handleLoadFromGist,
+        handleReplaceFromGist,
+        handleUploadToSupabase,
+        handleDownloadFromSupabase
+    } = useCloudSyncActions({
+        schedules,
+        setSchedules,
+        gistToken,
+        gistId,
+        setGistId,
+        setIsGistSyncing,
+        syncId,
+        setIsSupabaseSyncing,
+        setSyncCooldown
+    });
 
     // ── 公共 ScheduleCard props ───────────────────────────────────────────────
     const scheduleCardProps = {
         toggleComplete, toggleFavorite, handleBilibiliSearch,
         setEditingNoteId, setTempNote, setTempLink,
-        setSchedules, setExternalLinkModal,
+        setSchedules,
         showSearchBtn, showDynamicBtn, mobileOptimize
     };
 
@@ -518,6 +292,7 @@ function App() {
                     setView={setView}
                     searchQuery={searchQuery}
                     setSearchQuery={setSearchQuery}
+                    setSearchCurrentPage={setSearchCurrentPage}
                     themeMode={themeMode}
                     toggleTheme={toggleTheme}
                 />

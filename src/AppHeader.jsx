@@ -8,6 +8,7 @@ export default function AppHeader({
     setView,
     searchQuery,
     setSearchQuery,
+    setSearchCurrentPage,
     themeMode,
     toggleTheme
 }) {
@@ -56,6 +57,7 @@ export default function AppHeader({
                     value={searchQuery}
                     onChange={e => {
                         setSearchQuery(e.target.value);
+                        setSearchCurrentPage(1);
                         if (e.target.value.trim()) setView('search');
                         else if (view === 'search') setView('calendar');
                     }}

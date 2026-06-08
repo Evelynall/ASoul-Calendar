@@ -1,63 +1,16 @@
 import { useEffect, useState } from 'react';
-import { changelogData } from '../changelog-data';
 import Icon from './Icon';
-
-const STORAGE_KEY = 'changelog_lastViewedMajorVersion';
-
-// 版本号比较函数
-const compareVersions = (v1, v2) => {
-    const parts1 = v1.split('.').map(Number);
-    const parts2 = v2.split('.').map(Number);
-    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-        const num1 = parts1[i] || 0;
-        const num2 = parts2[i] || 0;
-        if (num1 > num2) return 1;
-        if (num1 < num2) return -1;
-    }
-    return 0;
-};
-
-// 获取最新的重大更新版本
-const getLatestMajorVersion = () => {
-    const majorVersions = changelogData
-        .filter(log => log.type === 'major')
-        .map(log => log.version);
-    
-    if (majorVersions.length === 0) return null;
-    
-    return majorVersions.reduce((latest, current) => 
-        compareVersions(current, latest) > 0 ? current : latest
-    );
-};
-
-// 检查是否有未读的重大更新
-const checkUnreadMajorUpdate = () => {
-    const latestMajor = getLatestMajorVersion();
-    if (!latestMajor) return null;
-    
-    const lastViewed = localStorage.getItem(STORAGE_KEY);
-    if (!lastViewed) return latestMajor;
-    
-    if (compareVersions(latestMajor, lastViewed) > 0) {
-        return latestMajor;
-    }
-    
-    return null;
-};
+import { checkUnreadMajorUpdate } from '../changelogUtils';
 
 const ChangelogNotification = ({ onOpenChangelog }) => {
-    const [unreadVersion, setUnreadVersion] = useState(null);
+    const [unreadVersion] = useState(() => checkUnreadMajorUpdate());
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {
-        const unread = checkUnreadMajorUpdate();
-        if (unread) {
-            setUnreadVersion(unread);
-            // 延迟显示，让页面先加载完成
-            const timer = setTimeout(() => setIsVisible(true), 2000);
-            return () => clearTimeout(timer);
-        }
-    }, []);
+        if (!unreadVersion) return;
+        const timer = setTimeout(() => setIsVisible(true), 2000);
+        return () => clearTimeout(timer);
+    }, [unreadVersion]);
 
     const handleClick = () => {
         onOpenChangelog();
@@ -80,7 +33,7 @@ const ChangelogNotification = ({ onOpenChangelog }) => {
                 <div className="flex-shrink-0 w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
                     <Icon name="bell" className="w-5 h-5 text-red-600 dark:text-red-400" />
                 </div>
-                
+
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
@@ -105,14 +58,6 @@ const ChangelogNotification = ({ onOpenChangelog }) => {
             </div>
         </div>
     );
-};
-
-// 标记已读（供外部调用）
-export const markChangelogAsRead = () => {
-    const latestMajor = getLatestMajorVersion();
-    if (latestMajor) {
-        localStorage.setItem(STORAGE_KEY, latestMajor);
-    }
 };
 
 export default ChangelogNotification;

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { uploadToSupabase } from '../supabaseSync';
 import { uploadToGist } from '../services/gistSync';
-import { USER_DATA_KEY, GIST_AUTO_SYNC_KEY, SUPABASE_AUTO_SYNC_KEY } from '../constants';
+import { GIST_AUTO_SYNC_KEY, SUPABASE_AUTO_SYNC_KEY } from '../constants';
+import { extractUserDataFromSchedules } from './useSchedules';
 
 /**
  * useAutoSync Hook
@@ -64,7 +65,7 @@ export function useAutoSync({
 
     // 触发一次实际同步
     const triggerAutoSync = useCallback(async () => {
-        const userData = JSON.parse(localStorage.getItem(USER_DATA_KEY) || '{}');
+        const userData = extractUserDataFromSchedules(schedules);
         let anySyncSuccess = false;
 
         if (supabaseAutoSync && supabaseUrl && supabaseKey && syncId) {
@@ -99,7 +100,7 @@ export function useAutoSync({
         }
 
         return anySyncSuccess;
-    }, [supabaseAutoSync, supabaseUrl, supabaseKey, syncId, gistAutoSync, gistToken, gistId, setGistId]);
+    }, [schedules, supabaseAutoSync, supabaseUrl, supabaseKey, syncId, gistAutoSync, gistToken, gistId, setGistId]);
 
     // 安排延迟同步（首次1分钟，后续3分钟）
     const scheduleAutoSync = useCallback(() => {

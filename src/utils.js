@@ -27,7 +27,7 @@ export const getMemberConfigColors = () => {
         try {
             const customColors = JSON.parse(saved);
             return { ...DEFAULT_MEMBER_CONFIG, ...customColors };
-        } catch (e) {
+        } catch {
             return DEFAULT_MEMBER_CONFIG;
         }
     }

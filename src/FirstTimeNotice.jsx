@@ -1,18 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import './FirstTimeNotice.css';
 
 const NOTICE_SHOWN_KEY = 'asoul_first_time_notice_shown';
 
 const FirstTimeNotice = () => {
-    const [isVisible, setIsVisible] = useState(false);
-
-    useEffect(() => {
-        // 检查是否已经显示过弹窗
-        const hasShown = localStorage.getItem(NOTICE_SHOWN_KEY);
-        if (!hasShown) {
-            setIsVisible(true);
-        }
-    }, []);
+    const [isVisible, setIsVisible] = useState(() => !localStorage.getItem(NOTICE_SHOWN_KEY));
 
     const handleClose = () => {
         // 标记为已显示
