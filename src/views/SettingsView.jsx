@@ -66,6 +66,8 @@ export default function SettingsView({
     // Gist 同步
     gistToken,
     setGistToken,
+    rememberGistToken,
+    setRememberGistToken,
     gistId,
     setGistId,
     gistAutoSync,
@@ -449,6 +451,13 @@ export default function SettingsView({
                     <div>
                         <label className="text-xs font-bold text-slate-500 mb-1.5 block">GitHub Token</label>
                         <input type="password" className="w-full p-3 border dark:border-slate-700 rounded-xl text-sm outline-none bg-slate-50 dark:bg-slate-800 font-mono" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" value={gistToken} onChange={e => setGistToken(e.target.value)} />
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                        <div>
+                            <div className="font-medium text-sm">记住 Token</div>
+                            <div className="text-xs text-slate-500">开启后将长期保存在本地，关闭后仅本次会话有效</div>
+                        </div>
+                        <Toggle value={rememberGistToken} onChange={setRememberGistToken} />
                     </div>
                     <div>
                         <label className="text-xs font-bold text-slate-500 mb-1.5 block">Gist ID（首次同步后自动生成，也可手动填入已有的 Gist ID）</label>

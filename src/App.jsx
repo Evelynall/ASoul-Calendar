@@ -32,7 +32,7 @@ import { useTheme } from './hooks/useTheme';
 import { useScheduleCommands } from './hooks/useScheduleCommands';
 import { useDataImport } from './hooks/useDataImport';
 import { useCloudSyncActions } from './hooks/useCloudSyncActions';
-import { loadGistToken, saveGistToken } from './services/credentialStorage';
+import { loadGistToken, saveGistToken, loadRememberGistToken, saveRememberGistToken } from './services/credentialStorage';
 
 // Views
 import CalendarView from './views/CalendarView';
@@ -115,6 +115,7 @@ function App() {
 
     // ── Gist 同步 ────────────────────────────────────────────────────────────
     const [gistToken, setGistToken] = useState(() => loadGistToken());
+    const [rememberGistToken, setRememberGistToken] = useState(() => loadRememberGistToken());
     const [gistId, setGistId] = useState(() => localStorage.getItem(GIST_ID_KEY) || '');
     const [isGistSyncing, setIsGistSyncing] = useState(false);
 
@@ -170,7 +171,8 @@ function App() {
 
     // ── 副作用：持久化 ────────────────────────────────────────────────────────
     useEffect(() => { localStorage.setItem(ICS_CONFIG_KEY, JSON.stringify(icsUrls)); }, [icsUrls]);
-    useEffect(() => { saveGistToken(gistToken); }, [gistToken]);
+    useEffect(() => { saveGistToken(gistToken, rememberGistToken); }, [gistToken, rememberGistToken]);
+    useEffect(() => { saveRememberGistToken(rememberGistToken); }, [rememberGistToken]);
     useEffect(() => { if (gistId) localStorage.setItem(GIST_ID_KEY, gistId); else localStorage.removeItem(GIST_ID_KEY); }, [gistId]);
     useEffect(() => { localStorage.setItem(CUSTOM_COLORS_KEY, JSON.stringify(customColors)); setSchedules(prev => [...prev]); }, [customColors, setSchedules]);
     useEffect(() => { setSchedules(prev => [...prev]); }, [useSpecialGroupColor, setSchedules]);
@@ -365,6 +367,7 @@ function App() {
                             customColors={customColors} setCustomColors={setCustomColors}
                             isLoadingBase={isLoadingBase} handleUpdateBaseSchedules={handleUpdateBaseSchedules}
                             gistToken={gistToken} setGistToken={setGistToken}
+                            rememberGistToken={rememberGistToken} setRememberGistToken={setRememberGistToken}
                             gistId={gistId} setGistId={setGistId}
                             gistAutoSync={gistAutoSync} setGistAutoSync={setGistAutoSync}
                             isGistSyncing={isGistSyncing}

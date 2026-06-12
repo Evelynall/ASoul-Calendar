@@ -1,6 +1,12 @@
 // 更新日志数据
 export const changelogData = [
     {
+        version: '1.7.3',
+        date: '2026-06-12',
+        type: 'patch',
+        changes: [
+            { type: 'improvement', text: '上次更新为了github token的安全性设置了关闭会话删除，现在更新了长久记忆的开关，开启就能和之前一样长期保留token' }]
+    },{
         version: '1.7.2',
         date: '2026-06-08',
         type: 'patch',

@@ -10,6 +10,7 @@ export const DISPLAY_MODE_KEY = 'asoul_display_mode';
 export const SPECIAL_GROUP_COLOR_KEY = 'asoul_special_group_color';
 export const ANIME_VIEW_KEY = 'asoul_anime_view';
 export const GIST_TOKEN_KEY = 'asoul_gist_token';
+export const GIST_REMEMBER_TOKEN_KEY = 'asoul_gist_remember_token';
 export const GIST_ID_KEY = 'asoul_gist_id';
 export const CUSTOM_COLORS_KEY = 'asoul_custom_colors';
 export const LINKS_KEY = 'asoul_quick_links';
